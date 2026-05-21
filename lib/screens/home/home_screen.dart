@@ -13,6 +13,7 @@ import '../reservation/reservation_step1.dart';
 import '../profile/profile_screen.dart';
 import '../menu/dish_detail_screen.dart';
 import '../../core/utils/notification_helper.dart';
+import '../../core/services/favorites_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -33,6 +34,7 @@ class _HomeScreenState extends State<HomeScreen> {
   int _userPoints = 0;
   String _userImage = '';
   bool _isRealClient = false;
+  Set<String> _favoritePlatIds = {};
 
   @override
   void initState() {
@@ -51,6 +53,22 @@ class _HomeScreenState extends State<HomeScreen> {
         _userImage = prefs.getString('user_image') ?? '';
         _isRealClient = email != null && email.isNotEmpty;
       });
+      if (_isRealClient) {
+        _fetchFavorites();
+      }
+    }
+  }
+
+  Future<void> _fetchFavorites() async {
+    try {
+      final favList = await FavoritesService().getFavorites();
+      if (mounted) {
+        setState(() {
+          _favoritePlatIds = favList.map<String>((f) => f['id'].toString()).toSet();
+        });
+      }
+    } catch (e) {
+      debugPrint('Erreur lors du chargement des favoris: $e');
     }
   }
 
@@ -525,6 +543,8 @@ class _HomeScreenState extends State<HomeScreen> {
         ? plat['image']
         : 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=400&q=80';
 
+    final isFavorite = _favoritePlatIds.contains(plat['id'].toString());
+
     return GestureDetector(
       onTap: () {
         Navigator.push(context, MaterialPageRoute(builder: (context) => DishDetailScreen(dish: plat)));
@@ -548,17 +568,70 @@ class _HomeScreenState extends State<HomeScreen> {
                     Positioned(
                       top: 8, 
                       right: 8, 
-                      child: ClipOval(
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-                          child: Container(
-                            padding: const EdgeInsets.all(7),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.2),
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white.withOpacity(0.4), width: 1),
+                      child: GestureDetector(
+                        onTap: () async {
+                          if (!_isRealClient) {
+                            NotificationHelper.showWarning(
+                              context, 
+                              title: "Accès limité", 
+                              message: "Veuillez créer un compte pour ajouter des favoris."
+                            );
+                            return;
+                          }
+                          
+                          final platId = plat['id'].toString();
+                          final success = isFavorite 
+                              ? await FavoritesService().removeFavorite(platId)
+                              : await FavoritesService().addFavorite(platId);
+                          
+                          if (success && mounted) {
+                            setState(() {
+                              if (isFavorite) {
+                                _favoritePlatIds.remove(platId);
+                              } else {
+                                _favoritePlatIds.add(platId);
+                              }
+                            });
+                            
+                            NotificationHelper.showSuccess(
+                              context,
+                              title: isFavorite ? "Retiré des favoris" : "Ajouté aux favoris",
+                              message: isFavorite 
+                                  ? "${plat['nom']} a été retiré de vos favoris."
+                                  : "${plat['nom']} a été ajouté à vos favoris."
+                            );
+                          } else if (mounted) {
+                            NotificationHelper.showError(
+                              context,
+                              title: "Erreur",
+                              message: "Une erreur est survenue lors de la modification des favoris.",
+                              onRetry: () {}
+                            );
+                          }
+                        },
+                        child: ClipOval(
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+                            child: Container(
+                              padding: const EdgeInsets.all(7),
+                              decoration: BoxDecoration(
+                                color: isFavorite 
+                                    ? Colors.amber.withOpacity(0.25)
+                                    : Colors.white.withOpacity(0.2),
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: isFavorite 
+                                      ? Colors.amber.withOpacity(0.45)
+                                      : Colors.white.withOpacity(0.4), 
+                                  width: 1
+                                ),
+                              ),
+                              child: Icon(
+                                Icons.favorite_rounded, 
+                                size: 14, 
+                                color: isFavorite ? Colors.amber : Colors.white
+                              ),
                             ),
-                            child: const Icon(Icons.favorite_rounded, size: 14, color: Colors.white),
                           ),
                         ),
                       ),

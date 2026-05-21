@@ -99,9 +99,11 @@ class AuthService {
 
   Future<void> _saveUserInfo(Map<String, dynamic> data) async {
     final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('user_id', data['id'] ?? '');
     await prefs.setString('user_email', data['email'] ?? '');
     await prefs.setString('user_nom', data['nom'] ?? '');
     await prefs.setString('user_prenom', data['prenom'] ?? '');
+    await prefs.setString('user_telephone', data['telephone'] ?? '');
     await prefs.setInt('user_points', data['pointsFidelite'] ?? 0);
     await prefs.setString('user_image', data['image'] ?? '');
   }
@@ -109,6 +111,73 @@ class AuthService {
   Future<String?> getToken() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString('jwt_token');
+  }
+
+  // Récupérer le profil connecté
+  Future<Map<String, dynamic>?> getProfile() async {
+    try {
+      final token = await getToken();
+      if (token == null) return null;
+
+      final response = await _dio.get(
+        '/auth/me',
+        options: Options(
+          headers: {
+            'Authorization': 'Bearer $token',
+          },
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        final data = response.data;
+        await _saveUserInfo(data);
+        return data;
+      }
+      return null;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  // Mettre à jour le profil
+  Future<Map<String, dynamic>?> updateProfile({
+    required String nom,
+    required String prenom,
+    required String email,
+    required String telephone,
+    String? password,
+  }) async {
+    try {
+      final token = await getToken();
+      if (token == null) return null;
+
+      final cleanPhone = telephone.replaceAll(' ', '');
+
+      final response = await _dio.put(
+        ApiConfig.updateProfile,
+        data: {
+          'nom': nom,
+          'prenom': prenom,
+          'email': email,
+          'telephone': cleanPhone,
+          if (password != null && password.isNotEmpty) 'motDePasse': password,
+        },
+        options: Options(
+          headers: {
+            'Authorization': 'Bearer $token',
+          },
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        final data = response.data;
+        await _saveUserInfo(data);
+        return data;
+      }
+      return null;
+    } catch (e) {
+      rethrow;
+    }
   }
 
   Future<void> logout() async {

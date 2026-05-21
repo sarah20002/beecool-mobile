@@ -34,6 +34,7 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() => _isLoading = true);
 
     try {
@@ -352,6 +353,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   GestureDetector(
                     onTap: () async {
                       if (formKey.currentState!.validate()) {
+                        FocusScope.of(context).unfocus();
                         Navigator.pop(context);
                         setState(() => _isLoading = true);
                         try {

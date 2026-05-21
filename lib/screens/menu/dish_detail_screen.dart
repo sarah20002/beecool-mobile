@@ -8,10 +8,18 @@ import '../home/qr_scanner_screen.dart';
 
 class DishDetailScreen extends StatefulWidget {
   final Map<String, dynamic> dish;
+  final bool isEditing;
+  final int? cartItemIndex;
+  final String? initialNotes;
+  final int? initialQuantity;
 
   const DishDetailScreen({
     super.key,
     required this.dish,
+    this.isEditing = false,
+    this.cartItemIndex,
+    this.initialNotes,
+    this.initialQuantity,
   });
 
   @override
@@ -20,7 +28,14 @@ class DishDetailScreen extends StatefulWidget {
 
 class _DishDetailScreenState extends State<DishDetailScreen> {
   int _quantity = 1;
-  final TextEditingController _notesController = TextEditingController();
+  late final TextEditingController _notesController;
+
+  @override
+  void initState() {
+    super.initState();
+    _quantity = widget.initialQuantity ?? 1;
+    _notesController = TextEditingController(text: widget.initialNotes ?? '');
+  }
 
   @override
   void dispose() {
@@ -29,6 +44,18 @@ class _DishDetailScreenState extends State<DishDetailScreen> {
   }
 
   void _addToCart() {
+    FocusScope.of(context).unfocus();
+    
+    if (widget.isEditing && widget.cartItemIndex != null) {
+      CartService().updateItem(
+        widget.cartItemIndex!,
+        quantity: _quantity,
+        notes: _notesController.text.trim(),
+      );
+      Navigator.pop(context);
+      return;
+    }
+
     final name = widget.dish['nom'] ?? 'Plat';
     final price = (widget.dish['prix'] as num?)?.toDouble() ?? 0.0;
     final imageUrl = (widget.dish['image'] != null && widget.dish['image'].toString().isNotEmpty)
@@ -319,12 +346,19 @@ class _DishDetailScreenState extends State<DishDetailScreen> {
                     borderRadius: BorderRadius.circular(28),
                     boxShadow: [BoxShadow(color: AppColors.secondary.withOpacity(0.3), blurRadius: 15, offset: const Offset(0, 8))],
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.shopping_cart_outlined, color: Colors.white, size: 20),
-                      SizedBox(width: 10),
-                      Text('Ajouter au panier', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                      Icon(
+                        widget.isEditing ? Icons.check_circle_outline_rounded : Icons.shopping_cart_outlined,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        widget.isEditing ? 'Confirmer la modification' : 'Ajouter au panier',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
                     ],
                   ),
                 ),

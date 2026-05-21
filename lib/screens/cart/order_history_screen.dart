@@ -1,7 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:dio/dio.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/config/api_config.dart';
+import '../../core/services/order_service.dart';
+import '../../core/services/auth_service.dart';
+import '../../core/utils/notification_helper.dart';
 import '../../widgets/custom_bottom_nav.dart';
 import 'order_tracking_screen.dart';
+import 'review_screen.dart';
 
 enum OrderFilter { toutes, enCours, servies }
 
@@ -14,67 +21,201 @@ class OrderHistoryScreen extends StatefulWidget {
 
 class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
   OrderFilter _selectedFilter = OrderFilter.toutes;
+  bool _isRealClient = false;
+  List<dynamic> _allOrders = [];
+  Map<String, int> _orderRatings = {}; // Map of commandeId -> nbreEtoiles
+  bool _isLoading = true;
 
-  // Static list of orders matching the screenshot exactly
-  final List<Map<String, dynamic>> _allOrders = [
-    {
-      'id': '4829',
-      'date': '13 fév · 20:30',
-      'status': 'EN PRÉPARATION',
-      'mainDish': 'Tajine bar safrané +3 arti...',
-      'total': '589,09',
-      'isActive': true,
-      'remainingItemsCount': 1,
-      'foodImages': [
-        'https://images.unsplash.com/photo-1541518763669-27fef04b14ea?auto=format&fit=crop&q=80&w=150',
-        'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&q=80&w=150',
-        'https://images.unsplash.com/photo-1482049016688-2d3e1b311543?auto=format&fit=crop&q=80&w=150',
-      ],
-    },
-    {
-      'id': '4801',
-      'date': '10 fév · 21:15',
-      'status': 'SERVIE',
-      'mainDish': 'Couscous royal +2 articles',
-      'total': '420,00',
-      'isActive': false,
-      'remainingItemsCount': 0,
-      'hasFeedback': true,
-      'foodImages': [
-        'https://images.unsplash.com/photo-1585238342024-78d387f4a707?auto=format&fit=crop&q=80&w=150',
-        'https://images.unsplash.com/photo-1606787366850-de6330128bfc?auto=format&fit=crop&q=80&w=150',
-        'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&q=80&w=150',
-      ],
-    },
-    {
-      'id': '4756',
-      'date': '02 fév · 13:00',
-      'status': 'SERVIE',
-      'mainDish': 'Pastilla volaille +1 article',
-      'total': '210,00',
-      'isActive': false,
-      'remainingItemsCount': 0,
-      'foodImages': [
-        'https://images.unsplash.com/photo-1626082927389-6cd097cdc6ec?auto=format&fit=crop&q=80&w=150',
-        'https://images.unsplash.com/photo-1598515214211-89d3e73ae83b?auto=format&fit=crop&q=80&w=150',
-      ],
-    },
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _checkClientAndLoadOrders();
+  }
 
-  List<Map<String, dynamic>> get _filteredOrders {
+  Future<void> _checkClientAndLoadOrders() async {
+    final prefs = await SharedPreferences.getInstance();
+    final clientId = prefs.getString('user_id') ?? '';
+    if (clientId.isNotEmpty) {
+      setState(() {
+        _isRealClient = true;
+      });
+      _loadOrders();
+    } else {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _loadOrders() async {
+    setState(() => _isLoading = true);
+    try {
+      final rawList = await OrderService().getClientOrders();
+      
+      // Sort: From most recent to oldest
+      rawList.sort((a, b) {
+        final DateTime dateA = DateTime.tryParse(a['dateCreation']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final DateTime dateB = DateTime.tryParse(b['dateCreation']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return dateB.compareTo(dateA);
+      });
+
+      // Filter: Only display orders up to one month in the past (30 days)
+      final DateTime oneMonthAgo = DateTime.now().subtract(const Duration(days: 30));
+      final list = rawList.where((ord) {
+        final DateTime date = DateTime.tryParse(ord['dateCreation']?.toString() ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return date.isAfter(oneMonthAgo);
+      }).toList();
+      
+      // Récupérer les feedbacks de ce client pour afficher les étoiles réelles !
+      List<dynamic> feedbacks = [];
+      try {
+        final token = await AuthService().getToken();
+        if (token != null) {
+          final dio = Dio(BaseOptions(
+            baseUrl: ApiConfig.baseUrl,
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+          ));
+          final fbResponse = await dio.get('/feedbacks/mes-feedbacks');
+          if (fbResponse.statusCode == 200) {
+            feedbacks = fbResponse.data as List;
+          }
+        }
+      } catch (fbErr) {
+        debugPrint('Error loading feedbacks: $fbErr');
+      }
+
+      final Map<String, int> orderRatings = {};
+      for (var fb in feedbacks) {
+        final String? cmdId = fb['commandeId']?.toString();
+        final int? stars = fb['nbreEtoiles'] as int?;
+        if (cmdId != null && stars != null) {
+          orderRatings[cmdId] = stars;
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _allOrders = list;
+          _orderRatings = orderRatings;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  List<dynamic> get _filteredOrders {
     switch (_selectedFilter) {
       case OrderFilter.toutes:
         return _allOrders;
       case OrderFilter.enCours:
-        return _allOrders.where((ord) => ord['status'] == 'EN PRÉPARATION' || ord['status'] == 'EN ATTENTE').toList();
+        return _allOrders.where((ord) {
+          final status = ord['statut']?.toString() ?? '';
+          return status == 'EN_ATTENTE' || status == 'EN_PREPARATION';
+        }).toList();
       case OrderFilter.servies:
-        return _allOrders.where((ord) => ord['status'] == 'SERVIE').toList();
+        return _allOrders.where((ord) {
+          final status = ord['statut']?.toString() ?? '';
+          return status == 'SERVIE' || status == 'PAYEE';
+        }).toList();
     }
   }
 
-  int get _countToutes => 24; // Keep the total of 24 as in the screenshot
-  int get _countEnCours => _allOrders.where((ord) => ord['status'] == 'EN PRÉPARATION' || ord['status'] == 'EN ATTENTE').length;
-  int get _countServies => 20; // Keep the total of 20 as in the screenshot
+  int get _countToutes => _allOrders.length;
+  
+  int get _countEnCours => _allOrders.where((ord) {
+        final status = ord['statut']?.toString() ?? '';
+        return status == 'EN_ATTENTE' || status == 'EN_PREPARATION';
+      }).length;
+      
+  int get _countServies => _allOrders.where((ord) {
+        final status = ord['statut']?.toString() ?? '';
+        return status == 'SERVIE' || status == 'PAYEE';
+      }).length;
+
+  double get _totalSpent {
+    double total = 0.0;
+    for (var ord in _allOrders) {
+      final double amount = double.tryParse(ord['montantTotal']?.toString() ?? '') ?? 0.0;
+      total += amount;
+    }
+    return total;
+  }
+
+  String _formatSpent(double value) {
+    if (value == value.roundToDouble()) {
+      return value.round().toString();
+    }
+    return value.toStringAsFixed(2);
+  }
+
+  String _formatDate(String? rawDate) {
+    if (rawDate == null) return '';
+    try {
+      final dt = DateTime.parse(rawDate);
+      final months = [
+        'janv', 'févr', 'mars', 'avr', 'mai', 'juin', 
+        'juil', 'août', 'sept', 'oct', 'nov', 'déc'
+      ];
+      final monthStr = months[dt.month - 1];
+      final minutesStr = dt.minute.toString().padLeft(2, '0');
+      return '${dt.day} $monthStr · ${dt.hour}:$minutesStr';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  String _buildMainDishText(List<dynamic> items) {
+    if (items.isEmpty) return 'Aucun article';
+    final mainNom = items[0]['platNom'] ?? 'Plat';
+    if (items.length > 1) {
+      final remain = items.length - 1;
+      return '$mainNom +$remain article${remain > 1 ? 's' : ''}';
+    }
+    return mainNom;
+  }
+
+  List<String> _getFoodImages(List<dynamic> items) {
+    final fallbacks = [
+      'https://images.unsplash.com/photo-1541518763669-27fef04b14ea?auto=format&fit=crop&q=80&w=150',
+      'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&q=80&w=150',
+      'https://images.unsplash.com/photo-1482049016688-2d3e1b311543?auto=format&fit=crop&q=80&w=150',
+      'https://images.unsplash.com/photo-1585238342024-78d387f4a707?auto=format&fit=crop&q=80&w=150',
+      'https://images.unsplash.com/photo-1606787366850-de6330128bfc?auto=format&fit=crop&q=80&w=150',
+    ];
+    
+    List<String> urls = [];
+    for (int i = 0; i < items.length; i++) {
+      if (urls.length >= 3) break;
+      
+      String? imgUrl;
+      final item = items[i];
+      if (item is Map) {
+        if (item['plat'] != null && item['plat'] is Map && item['plat']['image'] != null) {
+          imgUrl = item['plat']['image'].toString();
+        } else if (item['platImage'] != null) {
+          imgUrl = item['platImage'].toString();
+        } else if (item['image'] != null) {
+          imgUrl = item['image'].toString();
+        }
+      }
+
+      if (imgUrl != null && imgUrl.isNotEmpty) {
+        urls.add(imgUrl);
+      } else {
+        final nom = (item is Map ? item['platNom'] : null) ?? '';
+        final idx = nom.hashCode.abs() % fallbacks.length;
+        urls.add(fallbacks[idx]);
+      }
+    }
+    return urls;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -82,29 +223,32 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
     
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: Stack(
-        children: [
-          // Scrollable CustomScrollView with sticky tabs
-          CustomScrollView(
-            physics: const BouncingScrollPhysics(),
-            slivers: [
-              // 1. Header (without tabs)
-              SliverToBoxAdapter(
-                child: _buildHeader(statusBarHeight),
-              ),
+      body: CustomScrollView(
+        physics: const BouncingScrollPhysics(),
+        slivers: [
+          SliverToBoxAdapter(
+            child: _buildHeader(statusBarHeight),
+          ),
 
-              // 2. Sticky Tab Bar
-              SliverPersistentHeader(
-                pinned: true,
-                delegate: _StickyTabBarDelegate(
-                  child: _buildFilterTabs(),
-                ),
-              ),
+          SliverPersistentHeader(
+            pinned: true,
+            delegate: _StickyTabBarDelegate(
+              child: _buildFilterTabs(),
+            ),
+          ),
 
-              // 3. Content list
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
-                sliver: _filteredOrders.isEmpty
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
+            sliver: _isLoading
+                ? const SliverToBoxAdapter(
+                    child: Center(
+                      child: Padding(
+                        padding: EdgeInsets.only(top: 80),
+                        child: CircularProgressIndicator(color: Color(0xFFFC9910)),
+                      ),
+                    ),
+                  )
+                : _filteredOrders.isEmpty
                     ? SliverToBoxAdapter(child: _buildEmptyState())
                     : SliverList(
                         delegate: SliverChildBuilderDelegate(
@@ -118,31 +262,24 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
                           childCount: _filteredOrders.length,
                         ),
                       ),
-              ),
-            ],
-          ),
-
-          // ── Floating Cart FAB ──
-          Positioned(
-            bottom: 35,
-            left: MediaQuery.of(context).size.width / 2 - 28,
-            child: CustomBottomNav.buildCartFAB(context),
           ),
         ],
       ),
-      bottomNavigationBar: const CustomBottomNav(selectedIndex: 3), // highlight Profile tab
+      bottomNavigationBar: const CustomBottomNav(selectedIndex: 3),
+      floatingActionButton: CustomBottomNav.buildCartFAB(context),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
     );
   }
 
   Widget _buildHeader(double statusBarHeight) {
     return Container(
-      height: 240, // Reduced from 290 since tabs are now sticky below
+      height: 240,
       width: double.infinity,
       decoration: const BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            Color(0xFFFFD200), // Warm gold
-            Color(0xFFF7971E), // Amber orange
+            Color(0xFFF59E0B), // Warm rich amber
+            Color(0xFFD97706), // Deep rich gold/honey
           ],
           begin: Alignment.topRight,
           end: Alignment.bottomLeft,
@@ -154,16 +291,56 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
       ),
       child: Stack(
         children: [
-          // Background soft geometric overlays
+          // Geometric decoration 1: Rotated Hexagon at top right
           Positioned(
-            top: -20,
-            right: -20,
-            child: Container(
-              width: 170,
-              height: 170,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.08),
+            top: -40,
+            right: -30,
+            child: Transform.rotate(
+              angle: 0.4,
+              child: Container(
+                width: 160,
+                height: 160,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(36),
+                  border: Border.all(color: Colors.white.withOpacity(0.12), width: 2),
+                  color: Colors.white.withOpacity(0.03),
+                ),
+              ),
+            ),
+          ),
+
+          // Geometric decoration 2: Rotated Hexagon at bottom left
+          Positioned(
+            bottom: -30,
+            left: -40,
+            child: Transform.rotate(
+              angle: -0.2,
+              child: Container(
+                width: 140,
+                height: 140,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(28),
+                  border: Border.all(color: Colors.white.withOpacity(0.08), width: 1.5),
+                  color: Colors.white.withOpacity(0.02),
+                ),
+              ),
+            ),
+          ),
+
+          // Geometric decoration 3: Small diamond decoration
+          Positioned(
+            top: 80,
+            left: 70,
+            child: Transform.rotate(
+              angle: 0.8,
+              child: Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.white.withOpacity(0.15), width: 1),
+                  color: Colors.white.withOpacity(0.04),
+                ),
               ),
             ),
           ),
@@ -173,78 +350,75 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Top Action Bar
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    // Glassmorphic Back button
                     GestureDetector(
                       onTap: () => Navigator.pop(context),
                       child: Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: Colors.white.withOpacity(0.4),
+                          color: Colors.white.withOpacity(0.15),
+                          border: Border.all(color: Colors.white.withOpacity(0.25), width: 1),
                         ),
-                        child: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF0F172A), size: 16),
+                        child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 16),
                       ),
                     ),
                     
                     const Text(
                       'Mes commandes',
                       style: TextStyle(
-                        color: Color(0xFF0F172A),
+                        color: Colors.white,
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
                         letterSpacing: 0.2,
                       ),
                     ),
 
-                    // Search Button
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: Colors.white.withOpacity(0.4),
+                        color: Colors.white.withOpacity(0.15),
+                        border: Border.all(color: Colors.white.withOpacity(0.25), width: 1),
                       ),
-                      child: const Icon(Icons.search_rounded, color: Color(0xFF0F172A), size: 16),
+                      child: const Icon(Icons.search_rounded, color: Colors.white, size: 16),
                     ),
                   ],
                 ),
 
-                const SizedBox(height: 35),
+                const SizedBox(height: 25),
 
-                // "DÉPENSÉ EN 2026" Text
-                const Text(
+                Text(
                   'DÉPENSÉ EN 2026',
                   style: TextStyle(
-                    color: Color(0xFF7E7260),
+                    color: Colors.white.withOpacity(0.7),
                     fontSize: 10,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 1.5,
                   ),
                 ),
 
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
 
-                // Large "1 609 dh" title
                 Row(
                   textBaseline: TextBaseline.alphabetic,
                   crossAxisAlignment: CrossAxisAlignment.baseline,
                   children: [
-                    const Text(
-                      '1 609',
-                      style: TextStyle(
-                        color: Color(0xFF0F172A),
-                        fontSize: 48,
+                    Text(
+                      _formatSpent(_totalSpent),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 44,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      'dh',
+                      'DT',
                       style: TextStyle(
-                        color: const Color(0xFF0F172A).withOpacity(0.8),
+                        color: Colors.white.withOpacity(0.85),
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                       ),
@@ -252,13 +426,12 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
                   ],
                 ),
 
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
 
-                // Subtitle: 24 commandes • +320 Goûts d'Or gagnés
-                const Text(
-                  '24 commandes · +320 Goûts d\'Or gagnés',
+                Text(
+                  '$_countToutes commandes · +${(_countToutes * 1.5).toInt()} Goûts d\'Or gagnés',
                   style: TextStyle(
-                    color: Color(0xFF5C3F00),
+                    color: Colors.white.withOpacity(0.9),
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
                   ),
@@ -309,7 +482,7 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
         },
         child: Container(
           decoration: BoxDecoration(
-            color: isSelected ? const Color(0xFF0A1128) : Colors.transparent, // deep dark blue
+            color: isSelected ? const Color(0xFF132B49) : Colors.transparent,
             borderRadius: BorderRadius.circular(24),
           ),
           alignment: Alignment.center,
@@ -325,7 +498,6 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
                 ),
               ),
               const SizedBox(width: 6),
-              // Tiny badge
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                 decoration: BoxDecoration(
@@ -349,23 +521,46 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
   }
 
   Widget _buildOrderCard(Map<String, dynamic> ord) {
-    bool isActive = ord['isActive'] as bool;
-    String status = ord['status'] as String;
-    List<String> foodImages = List<String>.from(ord['foodImages'] ?? []);
-    int remaining = ord['remainingItemsCount'] as int;
-    bool hasFeedback = ord['hasFeedback'] ?? false;
+    final status = ord['statut']?.toString() ?? 'EN_ATTENTE';
+    final bool isActive = status == 'EN_ATTENTE' || status == 'EN_PREPARATION';
     
-    // Status colors
+    final itemsList = ord['items'] as List<dynamic>? ?? [];
+    final List<String> foodImages = _getFoodImages(itemsList);
+    final int remaining = itemsList.length > 3 ? itemsList.length - 3 : 0;
+    
+    // Status colors mapping
     Color statusBgColor;
     Color statusTextColor;
-    
-    if (status == 'EN PRÉPARATION') {
+    String statusLabel = 'EN ATTENTE';
+
+    if (status == 'EN_PREPARATION') {
       statusBgColor = const Color(0xFFFC9910);
       statusTextColor = Colors.white;
-    } else {
+      statusLabel = 'EN PRÉPARATION';
+    } else if (status == 'SERVIE') {
       statusBgColor = const Color(0xFFE0F2FE);
       statusTextColor = const Color(0xFF0369A1);
+      statusLabel = 'SERVIE';
+    } else if (status == 'PAYEE') {
+      statusBgColor = const Color(0xFFDCFCE7);
+      statusTextColor = const Color(0xFF15803D);
+      statusLabel = 'PAYÉE';
+    } else if (status == 'ANNULEE') {
+      statusBgColor = const Color(0xFFF1F5F9);
+      statusTextColor = const Color(0xFF64748B);
+      statusLabel = 'ANNULÉE';
+    } else {
+      statusBgColor = const Color(0xFFFEF3C7);
+      statusTextColor = const Color(0xFFD97706);
+      statusLabel = 'EN ATTENTE';
     }
+
+    final double priceVal = double.tryParse(ord['montantTotal']?.toString() ?? '') ?? 0.0;
+    final String formattedPrice = _formatSpent(priceVal);
+
+    // Simple display ID
+    final String rawId = ord['id']?.toString() ?? '';
+    final String displayId = rawId.length > 4 ? rawId.substring(rawId.length - 4) : rawId;
 
     return Container(
       decoration: BoxDecoration(
@@ -387,14 +582,13 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header: #id · Date on left, Status on right
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Row(
                 children: [
                   Text(
-                    '#${ord['id']}',
+                    '#$displayId',
                     style: const TextStyle(
                       color: Color(0xFF0F172A),
                       fontSize: 16,
@@ -403,7 +597,7 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    ord['date'],
+                    _formatDate(ord['dateCreation']?.toString()),
                     style: const TextStyle(
                       color: Color(0xFF94A3B8),
                       fontSize: 12,
@@ -419,7 +613,7 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
-                  status,
+                  statusLabel,
                   style: TextStyle(
                     color: statusTextColor,
                     fontSize: 8,
@@ -433,7 +627,6 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
 
           const SizedBox(height: 16),
 
-          // Content: Food Thumbnails + Description text
           Row(
             children: [
               _buildFoodThumbnails(foodImages, remaining),
@@ -443,7 +636,7 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      ord['mainDish'],
+                      _buildMainDishText(itemsList),
                       style: const TextStyle(
                         color: Color(0xFF0F172A),
                         fontSize: 13,
@@ -452,25 +645,6 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    if (hasFeedback) ...[
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Row(
-                            children: List.generate(5, (index) => const Icon(Icons.star_rounded, color: Colors.amber, size: 12)),
-                          ),
-                          const SizedBox(width: 6),
-                          const Text(
-                            'Votre avis',
-                            style: TextStyle(
-                              color: Color(0xFF94A3B8),
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
                   ],
                 ),
               ),
@@ -483,95 +657,180 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
           
           const SizedBox(height: 12),
 
-          // Footer: TOTAL label + value on left, Button on right
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'TOTAL',
-                    style: TextStyle(
-                      color: Color(0xFF94A3B8),
-                      fontSize: 8,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Row(
-                    textBaseline: TextBaseline.alphabetic,
-                    crossAxisAlignment: CrossAxisAlignment.baseline,
-                    children: [
-                      Text(
-                        ord['total'],
-                        style: const TextStyle(
-                          color: Color(0xFF0F172A),
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(width: 2),
-                      const Text(
-                        'dh',
-                        style: TextStyle(
-                          color: Color(0xFF0F172A),
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+              // Left: Feedback / Star rating
+              Expanded(
+                child: _buildFeedbackWidget(rawId, status, ord),
               ),
-              if (isActive) ...[
-                ElevatedButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const OrderTrackingScreen(orderId: '4829')),
-                    );
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF0A1128), // dark blue
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    elevation: 0,
-                  ),
-                  child: const Row(
+              
+              // Right: Total Price and optional Suivre button
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        'Suivre',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                      const Text(
+                        'TOTAL',
+                        style: TextStyle(
+                          color: Color(0xFF94A3B8),
+                          fontSize: 8,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1,
+                        ),
                       ),
-                      SizedBox(width: 4),
-                      Icon(Icons.chevron_right_rounded, size: 14),
+                      const SizedBox(height: 2),
+                      Row(
+                        textBaseline: TextBaseline.alphabetic,
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        children: [
+                          Text(
+                            formattedPrice,
+                            style: const TextStyle(
+                              color: Color(0xFF0F172A),
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(width: 2),
+                          const Text(
+                            'DT',
+                            style: TextStyle(
+                              color: Color(0xFF0F172A),
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
-                ),
-              ] else ...[
-                OutlinedButton.icon(
-                  onPressed: () {},
-                  icon: const Icon(Icons.refresh_rounded, size: 14, color: Color(0xFF0F172A)),
-                  label: const Text(
-                    'Recommander',
-                    style: TextStyle(color: Color(0xFF0F172A), fontSize: 11, fontWeight: FontWeight.bold),
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Color(0xFFE2E8F0)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  ),
-                ),
-              ],
+                  if (isActive) ...[
+                    const SizedBox(width: 12),
+                    ElevatedButton(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => OrderTrackingScreen(orderId: rawId)),
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0A1128),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        elevation: 0,
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Suivre',
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                          ),
+                          SizedBox(width: 4),
+                          Icon(Icons.chevron_right_rounded, size: 14),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ],
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildFeedbackWidget(String rawId, String status, Map<String, dynamic> ord) {
+    final int? rating = _orderRatings[rawId];
+    final bool hasRating = rating != null;
+    final bool isCompleted = status == 'SERVIE' || status == 'PAYEE';
+
+    if (hasRating) {
+      return Row(
+        children: [
+          Row(
+            children: List.generate(5, (index) {
+              return Icon(
+                Icons.star_rounded,
+                color: index < rating ? Colors.amber : Colors.grey.shade300,
+                size: 14,
+              );
+            }),
+          ),
+          const SizedBox(width: 6),
+          const Text(
+            'Votre avis',
+            style: TextStyle(
+              color: Color(0xFF94A3B8),
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      );
+    } else if (isCompleted) {
+      return GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ReviewScreen(
+                orderId: rawId,
+                sessionToken: ord['sessionToken'] ?? '',
+              ),
+            ),
+          ).then((_) => _loadOrders());
+        },
+        child: Row(
+          children: [
+            Row(
+              children: List.generate(5, (index) {
+                return Icon(
+                  Icons.star_border_rounded,
+                  color: Colors.grey.shade400,
+                  size: 14,
+                );
+              }),
+            ),
+            const SizedBox(width: 6),
+            const Text(
+              'Laisser un avis',
+              style: TextStyle(
+                color: AppColors.secondary,
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+                decoration: TextDecoration.underline,
+              ),
+            ),
+          ],
+        ),
+      );
+    } else {
+      return Row(
+        children: [
+          Icon(
+            status == 'ANNULEE' ? Icons.cancel_outlined : Icons.info_outline,
+            color: const Color(0xFF94A3B8),
+            size: 12,
+          ),
+          const SizedBox(width: 5),
+          Text(
+            status == 'ANNULEE' ? 'Commande annulée' : 'En cours de préparation',
+            style: const TextStyle(
+              color: Color(0xFF94A3B8),
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      );
+    }
   }
 
   Widget _buildFoodThumbnails(List<String> urls, int remaining) {
@@ -637,7 +896,9 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
           Icon(Icons.shopping_bag_outlined, size: 60, color: Colors.grey.shade300),
           const SizedBox(height: 16),
           Text(
-            'Aucune commande trouvée',
+            _isRealClient 
+                ? 'Aucune commande trouvée' 
+                : 'Veuillez vous connecter pour voir l\'historique',
             style: TextStyle(
               color: Colors.grey.shade500,
               fontSize: 14,
@@ -655,14 +916,14 @@ class _StickyTabBarDelegate extends SliverPersistentHeaderDelegate {
   _StickyTabBarDelegate({required this.child});
 
   @override
-  double get minExtent => 76.0; // 60 height of tabs + 16 vertical padding
+  double get minExtent => 76.0;
   @override
   double get maxExtent => 76.0;
 
   @override
   Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
     return Container(
-      color: AppColors.background, // same as page background so the grid/list scrolls cleanly behind it
+      color: AppColors.background,
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       alignment: Alignment.center,
       child: child,
@@ -671,6 +932,6 @@ class _StickyTabBarDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   bool shouldRebuild(_StickyTabBarDelegate oldDelegate) {
-    return false;
+    return true;
   }
 }

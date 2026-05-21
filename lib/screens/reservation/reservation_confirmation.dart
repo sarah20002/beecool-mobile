@@ -1,22 +1,34 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:animate_do/animate_do.dart';
-import '../../core/theme/app_colors.dart';
+import 'package:add_2_calendar/add_2_calendar.dart';
 import '../home/home_screen.dart';
 
 class ReservationConfirmation extends StatelessWidget {
-  const ReservationConfirmation({super.key});
+  final Map<String, dynamic> reservation;
+  final String etablissementNom;
+
+  const ReservationConfirmation({
+    super.key,
+    required this.reservation,
+    required this.etablissementNom,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final String fullNom = reservation['nomReservation'] ?? 'Yasmine';
+    final String firstName = fullNom.split(' ')[0];
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: Column(
         children: [
-          _buildHeroHeader(context),
+          _buildHeroHeader(context, firstName),
           Expanded(
             child: Transform.translate(
               offset: const Offset(0, -50),
               child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
                 padding: const EdgeInsets.symmetric(horizontal: 25),
                 child: Column(
                   children: [
@@ -33,7 +45,7 @@ class ReservationConfirmation extends StatelessWidget {
     );
   }
 
-  Widget _buildHeroHeader(BuildContext context) {
+  Widget _buildHeroHeader(BuildContext context, String firstName) {
     return Container(
       height: 480,
       width: double.infinity,
@@ -55,24 +67,21 @@ class ReservationConfirmation extends StatelessWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      GestureDetector(
-                        onTap: () => Navigator.pop(context),
-                        child: Container(
-                          width: 44, height: 44,
-                          decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), shape: BoxShape.circle),
-                          child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
-                        ),
-                      ),
+                      const SizedBox(width: 44), // alignment balance
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
-                        decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white.withOpacity(0.3))),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2), 
+                          borderRadius: BorderRadius.circular(20), 
+                          border: Border.all(color: Colors.white.withOpacity(0.3)),
+                        ),
                         child: const Row(
                           children: [
-                            Text('ÉTAPE 5', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11)),
-                            Text(' • /5', style: TextStyle(color: Colors.white60, fontSize: 11)),
+                            Text('CONFIRMATION', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11)),
                           ],
                         ),
                       ),
+                      const SizedBox(width: 44),
                     ],
                   ),
                   const Spacer(),
@@ -87,7 +96,11 @@ class ReservationConfirmation extends StatelessWidget {
                         ),
                         Container(
                           width: 95, height: 95,
-                          decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 20, offset: Offset(0, 10))]),
+                          decoration: const BoxDecoration(
+                            color: Colors.white, 
+                            shape: BoxShape.circle, 
+                            boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 20, offset: Offset(0, 10))],
+                          ),
                           child: const Icon(Icons.check_rounded, color: Color(0xFF1A2A47), size: 55),
                         ),
                       ],
@@ -96,7 +109,11 @@ class ReservationConfirmation extends StatelessWidget {
                   const SizedBox(height: 30),
                   const Text('RÉSERVATION CONFIRMÉE', style: TextStyle(color: Color(0xFF1A2A47), fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
                   const SizedBox(height: 15),
-                  const Text('La table vous attend,\nYasmine', textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF1A2A47), fontSize: 32, fontWeight: FontWeight.bold, fontFamily: 'Serif', height: 1.2)),
+                  Text(
+                    'La table vous attend,\n$firstName',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Color(0xFF1A2A47), fontSize: 32, fontWeight: FontWeight.bold, fontFamily: 'Serif', height: 1.2),
+                  ),
                   const SizedBox(height: 60),
                 ],
               ),
@@ -108,6 +125,31 @@ class ReservationConfirmation extends StatelessWidget {
   }
 
   Widget _buildTicketCard() {
+    String dateStr = "";
+    String timeStr = "";
+    
+    try {
+      final dtStr = reservation['dateHeure'].toString();
+      final parts = dtStr.split('T');
+      final dateParts = parts[0].split('-');
+      final String year = dateParts[0];
+      final String month = dateParts[1];
+      final String day = dateParts[2];
+      
+      final dt = DateTime(int.parse(year), int.parse(month), int.parse(day));
+      final List<String> weekdays = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+      final List<String> months = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+      
+      dateStr = "${weekdays[dt.weekday - 1]} ${dt.day}\n${months[dt.month - 1]}";
+      timeStr = parts[1].substring(0, 5);
+    } catch (e) {
+      dateStr = "Date";
+      timeStr = "Heure";
+    }
+
+    final int tableNum = reservation['numeroTable'] ?? 0;
+    final String tableLabel = tableNum > 0 ? "N° $tableNum" : "Libre";
+
     return FadeInUp(
       child: Container(
         decoration: BoxDecoration(
@@ -127,19 +169,19 @@ class ReservationConfirmation extends StatelessWidget {
                     child: const Center(child: Text('🐝', style: TextStyle(fontSize: 20))),
                   ),
                   const SizedBox(width: 15),
-                  const Expanded(
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('BEECOOL', style: TextStyle(color: Color(0xFFF8A11C), fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
-                        Text('Saveurs & Cie · Anfa', style: TextStyle(color: Color(0xFF1A2A47), fontSize: 16, fontWeight: FontWeight.bold)),
+                        const Text('BEECOOL', style: TextStyle(color: Color(0xFFF8A11C), fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                        Text(etablissementNom, style: const TextStyle(color: Color(0xFF1A2A47), fontSize: 16, fontWeight: FontWeight.bold)),
                       ],
                     ),
                   ),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(color: const Color(0xFFFDEFD9), borderRadius: BorderRadius.circular(12)),
-                    child: const Text('#R-4829', style: TextStyle(color: Color(0xFF8B5E14), fontSize: 11, fontWeight: FontWeight.bold)),
+                    child: Text('#R-${reservation['id'] ?? 'xxxx'}', style: const TextStyle(color: Color(0xFF8B5E14), fontSize: 11, fontWeight: FontWeight.bold)),
                   ),
                 ],
               ),
@@ -150,10 +192,10 @@ class ReservationConfirmation extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  _ticketItem('Date', 'Mer. 15\nmai'),
-                  _ticketItem('Heure', '13:00'),
-                  _ticketItem('Couverts', '4 pers.'),
-                  _ticketItem('Table', 'N° 05'),
+                  _ticketItem('Date', dateStr),
+                  _ticketItem('Heure', timeStr),
+                  _ticketItem('Couverts', '${reservation['nbPersonnes'] ?? 0} pers.'),
+                  _ticketItem('Table', tableLabel),
                 ],
               ),
             ),
@@ -200,7 +242,38 @@ class ReservationConfirmation extends StatelessWidget {
           Expanded(
             flex: 2,
             child: OutlinedButton.icon(
-              onPressed: () {},
+              onPressed: () {
+                if (kIsWeb) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text("L'ajout au calendrier est disponible uniquement sur l'application mobile."),
+                      backgroundColor: Color(0xFFDC2626),
+                    ),
+                  );
+                  return;
+                }
+                
+                try {
+                  final dtStr = reservation['dateHeure'].toString();
+                  final dt = DateTime.parse(dtStr);
+                  final event = Event(
+                    title: 'Réservation BeeCool - $etablissementNom',
+                    description: 'Votre réservation chez $etablissementNom pour ${reservation['nbPersonnes'] ?? 0} personnes.',
+                    location: etablissementNom,
+                    startDate: dt,
+                    endDate: dt.add(const Duration(hours: 2)), // Durée estimée 2h
+                    iosParams: const IOSParams(
+                      reminder: Duration(minutes: 60),
+                    ),
+                    androidParams: const AndroidParams(
+                      emailInvites: [],
+                    ),
+                  );
+                  Add2Calendar.addEvent2Cal(event);
+                } catch (e) {
+                  debugPrint("Erreur ajout calendrier: $e");
+                }
+              },
               icon: const Icon(Icons.calendar_today_outlined, size: 16),
               label: const Text('Calendrier'),
               style: OutlinedButton.styleFrom(
@@ -273,7 +346,6 @@ class _HexagonPainter extends CustomPainter {
     for (int i = 0; i < 6; i++) {
       double angle = (i * 60) * 3.14159 / 180;
       double px = x + r * (i == 0 || i == 3 ? 1 : 0.5);
-      // Correction for proper hexagon points
       double cosAngle = (i == 0) ? 1 : (i == 3) ? -1 : (i == 1 || i == 5) ? 0.5 : -0.5;
       double sinAngle = (i == 1 || i == 2) ? 0.866 : (i == 4 || i == 5) ? -0.866 : 0;
       if (i == 0) hPath.moveTo(x + r * cosAngle, y + r * sinAngle);

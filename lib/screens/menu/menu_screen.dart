@@ -11,8 +11,11 @@ import '../../widgets/custom_bottom_nav.dart';
 
 
 import 'package:dio/dio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/config/api_config.dart';
 import '../../core/services/cart_service.dart';
+import '../../core/services/favorites_service.dart';
+import '../../core/utils/notification_helper.dart';
 import 'dish_detail_screen.dart';
 
 class MenuScreen extends StatefulWidget {
@@ -30,12 +33,20 @@ class MenuScreen extends StatefulWidget {
 }
 
 class _MenuScreenState extends State<MenuScreen> {
-  final Dio _dio = Dio(BaseOptions(baseUrl: ApiConfig.baseUrl));
+  final Dio _dio = Dio(BaseOptions(
+    baseUrl: ApiConfig.baseUrl,
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Platform': 'mobile',
+    },
+  ));
   
   List<dynamic> _categories = [];
   List<dynamic> _plats = [];
   bool _isLoading = true;
   int _selectedCategoryIndex = 0;
+  List<String> _favoritePlatIds = [];
+  bool _isRealClient = false;
 
   @override
   void initState() {
@@ -44,7 +55,32 @@ class _MenuScreenState extends State<MenuScreen> {
     if (widget.sessionToken != null) {
       CartService().setSessionToken(widget.sessionToken!);
     }
+    _checkClientAndLoadFavorites();
     _fetchMenu();
+  }
+
+  Future<void> _checkClientAndLoadFavorites() async {
+    final prefs = await SharedPreferences.getInstance();
+    final clientId = prefs.getString('user_id') ?? '';
+    if (clientId.isNotEmpty) {
+      setState(() {
+        _isRealClient = true;
+      });
+      _loadFavorites();
+    }
+  }
+
+  Future<void> _loadFavorites() async {
+    try {
+      final list = await FavoritesService().getFavorites();
+      if (mounted) {
+        setState(() {
+          _favoritePlatIds = list.map((fav) => fav['id'].toString()).toList();
+        });
+      }
+    } catch (e) {
+      // ignore
+    }
   }
 
   Future<void> _fetchMenu() async {
@@ -70,8 +106,7 @@ class _MenuScreenState extends State<MenuScreen> {
   List<dynamic> get _filteredPlats {
     if (_categories.isEmpty || _selectedCategoryIndex == 0) return _plats;
     final catId = _categories[_selectedCategoryIndex]['id'];
-    // Vérifier selon la structure de retour backend (categorie.id ou categorieId)
-    return _plats.where((p) => p['categorie'] != null && p['categorie']['id'] == catId).toList();
+    return _plats.where((p) => p['categorieId'] != null && p['categorieId'] == catId).toList();
   }
 
 
@@ -351,9 +386,83 @@ class _MenuScreenState extends State<MenuScreen> {
               ),
               child: Row(
                 children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(20),
-                    child: Image.network(imageUrl, width: 90, height: 90, fit: BoxFit.cover),
+                  Stack(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(20),
+                        child: Image.network(imageUrl, width: 90, height: 90, fit: BoxFit.cover),
+                      ),
+                      Positioned(
+                        top: 4,
+                        right: 4,
+                        child: GestureDetector(
+                          onTap: () async {
+                            if (!_isRealClient) {
+                              NotificationHelper.showWarning(
+                                context, 
+                                title: "Accès limité", 
+                                message: "Veuillez créer un compte pour ajouter des favoris."
+                              );
+                              return;
+                            }
+                            
+                            final platId = item['id'].toString();
+                            final isFav = _favoritePlatIds.contains(platId);
+                            final success = isFav 
+                                ? await FavoritesService().removeFavorite(platId)
+                                : await FavoritesService().addFavorite(platId);
+                            
+                            if (success && mounted) {
+                              setState(() {
+                                if (isFav) {
+                                  _favoritePlatIds.remove(platId);
+                                } else {
+                                  _favoritePlatIds.add(platId);
+                                }
+                              });
+                              
+                              NotificationHelper.showSuccess(
+                                context,
+                                title: isFav ? "Retiré des favoris" : "Ajouté aux favoris",
+                                message: isFav 
+                                    ? "${item['nom']} a été retiré de vos favoris."
+                                    : "${item['nom']} a été ajouté à vos favoris."
+                              );
+                            } else if (mounted) {
+                              NotificationHelper.showError(
+                                context,
+                                title: "Erreur",
+                                message: "Une erreur est survenue lors de la modification des favoris.",
+                                onRetry: () {},
+                              );
+                            }
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.9),
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.12),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
+                                )
+                              ]
+                            ),
+                            child: Icon(
+                              _favoritePlatIds.contains(item['id'].toString())
+                                  ? Icons.favorite_rounded
+                                  : Icons.favorite_outline_rounded,
+                              color: _favoritePlatIds.contains(item['id'].toString())
+                                  ? Colors.amber
+                                  : Colors.grey.shade600,
+                              size: 14,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(width: 15),
                   Expanded(
@@ -368,11 +477,27 @@ class _MenuScreenState extends State<MenuScreen> {
                       ],
                     ),
                   ),
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: const BoxDecoration(color: AppColors.secondary, shape: BoxShape.circle),
-                    child: const Icon(Icons.add, color: Colors.white, size: 20),
+                  GestureDetector(
+                    onTap: () {
+                      CartService().addItem(CartItem(
+                        id: item['id'].toString(),
+                        name: item['nom'] ?? 'Plat',
+                        price: double.tryParse(item['prix']?.toString() ?? '') ?? 0.0,
+                        imageUrl: imageUrl,
+                        quantity: 1,
+                      ));
+                      NotificationHelper.showSuccess(
+                        context,
+                        title: "Ajouté au panier",
+                        message: "${item['nom']} a été ajouté à votre panier."
+                      );
+                    },
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: const BoxDecoration(color: AppColors.secondary, shape: BoxShape.circle),
+                      child: const Icon(Icons.add, color: Colors.white, size: 20),
+                    ),
                   ),
                 ],
               ),

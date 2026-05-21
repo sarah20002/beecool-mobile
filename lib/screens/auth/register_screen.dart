@@ -35,6 +35,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() => _isLoading = true);
 
     try {

@@ -1,10 +1,35 @@
 import 'package:flutter/material.dart';
-import 'dart:ui';
 import '../../core/theme/app_colors.dart';
+import '../../core/services/reservation_service.dart';
 import 'reservation_confirmation.dart';
 
 class ReservationStep4 extends StatefulWidget {
-  const ReservationStep4({super.key});
+  final Map<String, dynamic> etablissement;
+  final DateTime date;
+  final String heure;
+  final int nbPersonnes;
+  final String nomReservation;
+  final String telephone;
+  final String email;
+  final String demandeSpeciale;
+  final bool occasionSpeciale;
+  final int numeroTable;
+  final String? tableId;
+
+  const ReservationStep4({
+    super.key,
+    required this.etablissement,
+    required this.date,
+    required this.heure,
+    required this.nbPersonnes,
+    required this.nomReservation,
+    required this.telephone,
+    required this.email,
+    required this.demandeSpeciale,
+    required this.occasionSpeciale,
+    required this.numeroTable,
+    this.tableId,
+  });
 
   @override
   State<ReservationStep4> createState() => _ReservationStep4State();
@@ -14,14 +39,17 @@ class _ReservationStep4State extends State<ReservationStep4> {
   String _month = '12';
   String _year  = '2027';
   final TextEditingController _cardNumberController = TextEditingController(text: '4128 1245 8836 4128');
-  final TextEditingController _holderController = TextEditingController(text: 'YASMINE BENNIS');
+  final TextEditingController _holderController = TextEditingController();
   
   String _cardNumber = "4128 1245 8836 4128";
-  String _cardHolder = "YASMINE BENNIS";
+  String _cardHolder = "";
+  bool _isSubmitting = false;
 
   @override
   void initState() {
     super.initState();
+    _cardHolder = widget.nomReservation.toUpperCase();
+    _holderController.text = _cardHolder;
     _cardNumberController.addListener(() => setState(() => _cardNumber = _cardNumberController.text));
     _holderController.addListener(() => setState(() => _cardHolder = _holderController.text.toUpperCase()));
   }
@@ -31,6 +59,59 @@ class _ReservationStep4State extends State<ReservationStep4> {
     _cardNumberController.dispose();
     _holderController.dispose();
     super.dispose();
+  }
+
+  double get _calculatedCaution {
+    final rawPlace = widget.etablissement['montantCautionParPlace'];
+    final double amountPerSeat = rawPlace != null ? double.parse(rawPlace.toString()) : 50.0; // default 50 DT/dh
+    return amountPerSeat * widget.nbPersonnes;
+  }
+
+  Future<void> _submitReservation() async {
+    if (_isSubmitting) return;
+    setState(() => _isSubmitting = true);
+
+    try {
+      final String monthStr = widget.date.month.toString().padLeft(2, '0');
+      final String dayStr = widget.date.day.toString().padLeft(2, '0');
+      final String datePart = "${widget.date.year}-$monthStr-$dayStr";
+      final String dateHeureStr = "${datePart}T${widget.heure}:00";
+
+      final res = await ReservationService().createReservation(
+        etablissementId: widget.etablissement['id'].toString(),
+        dateHeure: dateHeureStr,
+        nbPersonnes: widget.nbPersonnes,
+        nomReservation: widget.nomReservation,
+        cautionPayee: true,
+        tableId: widget.tableId,
+      );
+
+      if (res != null && mounted) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ReservationConfirmation(
+              reservation: res,
+              etablissementNom: widget.etablissement['nom'] ?? '',
+            ),
+          ),
+          (route) => false, // Clear all steps stack
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Erreur de réservation: ${e.toString().replaceAll("Exception: ", "")}"),
+            backgroundColor: Colors.red.shade600,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
+    }
   }
 
   @override
@@ -88,7 +169,11 @@ class _ReservationStep4State extends State<ReservationStep4> {
             onTap: () => Navigator.pop(context),
             child: Container(
               width: 44, height: 44,
-              decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), shape: BoxShape.circle, border: Border.all(color: Colors.white.withOpacity(0.2))),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.1), 
+                shape: BoxShape.circle, 
+                border: Border.all(color: Colors.white.withOpacity(0.2)),
+              ),
               child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
             ),
           ),
@@ -98,7 +183,7 @@ class _ReservationStep4State extends State<ReservationStep4> {
             child: const Row(
               children: [
                 Text('ÉTAPE 4', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11)),
-                Text(' • /5', style: TextStyle(color: Colors.white60, fontSize: 11)),
+                Text(' • /4', style: TextStyle(color: Colors.white60, fontSize: 11)),
               ],
             ),
           ),
@@ -119,11 +204,13 @@ class _ReservationStep4State extends State<ReservationStep4> {
         const SizedBox(height: 30),
         _buildField(label: 'Numéro de carte', controller: _cardNumberController, hint: '4128 1245 8836 4128', isCard: true),
         const SizedBox(height: 20),
+        _buildField(label: 'Titulaire de la carte', controller: _holderController, hint: 'YASMINE BENNIS'),
+        const SizedBox(height: 20),
         Row(
           children: [
-            Expanded(child: _buildDropdown(label: 'Mois', value: _month, items: ['01','12'], onChanged: (v) => setState(() => _month = v!))),
+            Expanded(child: _buildDropdown(label: 'Mois', value: _month, items: ['01','02','03','04','05','06','07','08','09','10','11','12'], onChanged: (v) => setState(() => _month = v!))),
             const SizedBox(width: 15),
-            Expanded(child: _buildDropdown(label: 'Année', value: _year, items: ['2027','2028'], onChanged: (v) => setState(() => _year = v!))),
+            Expanded(child: _buildDropdown(label: 'Année', value: _year, items: ['2026','2027','2028','2029','2030'], onChanged: (v) => setState(() => _year = v!))),
             const SizedBox(width: 15),
             SizedBox(width: 100, child: _buildField(label: 'CVV', hint: '•••')),
           ],
@@ -145,7 +232,7 @@ class _ReservationStep4State extends State<ReservationStep4> {
         Container(
           height: 55,
           padding: const EdgeInsets.symmetric(horizontal: 20),
-          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18)),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18), border: Border.all(color: Colors.grey.shade200)),
           child: Row(
             children: [
               Expanded(
@@ -176,7 +263,7 @@ class _ReservationStep4State extends State<ReservationStep4> {
         Container(
           height: 55,
           padding: const EdgeInsets.symmetric(horizontal: 20),
-          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18)),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18), border: Border.all(color: Colors.grey.shade200)),
           child: DropdownButtonHideUnderline(
             child: DropdownButton<String>(
               value: value,
@@ -192,18 +279,19 @@ class _ReservationStep4State extends State<ReservationStep4> {
   }
 
   Widget _buildPaymentInfoBox() {
+    final double cautionVal = _calculatedCaution;
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(color: const Color(0xFF0B1124), borderRadius: BorderRadius.circular(20)),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const Column(
+          Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('MONTANT BLOQUÉ', style: TextStyle(color: Colors.white54, fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 1)),
-              SizedBox(height: 8),
-              Text('200,00 dh', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+              const Text('MONTANT BLOQUÉ', style: TextStyle(color: Colors.white54, fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 1)),
+              const SizedBox(height: 8),
+              Text('${cautionVal.toStringAsFixed(2)} DT', style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
             ],
           ),
           Container(
@@ -217,8 +305,9 @@ class _ReservationStep4State extends State<ReservationStep4> {
   }
 
   Widget _buildConfirmButton() {
+    final double cautionVal = _calculatedCaution;
     return GestureDetector(
-      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ReservationConfirmation())),
+      onTap: _isSubmitting ? null : _submitReservation,
       child: Container(
         height: 65,
         decoration: BoxDecoration(
@@ -226,15 +315,20 @@ class _ReservationStep4State extends State<ReservationStep4> {
           borderRadius: BorderRadius.circular(32.5),
           boxShadow: [BoxShadow(color: const Color(0xFFF8A11C).withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 10))],
         ),
-        child: const Center(
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.fingerprint, color: Color(0xFF0B1124), size: 20),
-              SizedBox(width: 12),
-              Text('Confirmer la caution · 200 dh', style: TextStyle(color: Color(0xFF0B1124), fontWeight: FontWeight.bold, fontSize: 16)),
-            ],
-          ),
+        child: Center(
+          child: _isSubmitting
+              ? const CircularProgressIndicator(color: Color(0xFF0B1124))
+              : Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.fingerprint, color: Color(0xFF0B1124), size: 20),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Confirmer la caution · ${cautionVal.toStringAsFixed(0)} DT',
+                      style: const TextStyle(color: Color(0xFF0B1124), fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                  ],
+                ),
         ),
       ),
     );
@@ -282,7 +376,7 @@ class _VisaCardVisual extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    _MetaLabel(label: 'TITULAIRE', value: cardHolder),
+                    _MetaLabel(label: 'TITULAIRE', value: cardHolder.isEmpty ? 'TITULAIRE DE CARTE' : cardHolder),
                     const _MetaLabel(label: 'EXPIRE', value: '12/27'),
                   ],
                 ),

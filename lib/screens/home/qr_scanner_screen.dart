@@ -48,7 +48,17 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
       const SnackBar(content: Text('Ouverture de la table en cours...'), duration: Duration(seconds: 1)),
     );
 
-    final dio = Dio(BaseOptions(baseUrl: ApiConfig.baseUrl));
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('jwt_token');
+
+    final dio = Dio(BaseOptions(
+      baseUrl: ApiConfig.baseUrl,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Platform': 'mobile',
+        if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+      },
+    ));
 
     try {
       final response = await dio.get('/tables/$tableId/scan');

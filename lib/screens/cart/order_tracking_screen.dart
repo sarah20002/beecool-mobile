@@ -68,6 +68,10 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
       final prefs = await SharedPreferences.getInstance();
       final email = prefs.getString('user_email');
       final isRealClient = email != null && email.isNotEmpty;
+      final currentUserId = prefs.getString('user_id');
+      final userNom = prefs.getString('user_nom') ?? '';
+      final userPrenom = prefs.getString('user_prenom') ?? '';
+      final currentUserName = userNom.isNotEmpty ? '$userPrenom $userNom' : '';
 
       final token = await AuthService().getToken();
       final scanToken = await TableService().getSessionToken();
@@ -94,10 +98,25 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
             if (sessionResponse.statusCode == 200) {
               final List<dynamic> sessionCommands = sessionResponse.data as List;
               for (var cmd in sessionCommands) {
-                final cmdItems = cmd['items'] as List? ?? [];
-                for (var item in cmdItems) {
-                  item['commandeStatut'] = cmd['statut'];
-                  allSessionItems.add(item);
+                final String? cmdClientId = cmd['clientId']?.toString();
+                final String? cmdClientNom = cmd['clientNom']?.toString();
+
+                bool isOwnOrder = (cmd['id']?.toString() == widget.orderId);
+
+                if (!isOwnOrder) {
+                  if (currentUserId != null && currentUserId.isNotEmpty && cmdClientId != null) {
+                    isOwnOrder = (cmdClientId == currentUserId);
+                  } else if (currentUserName.isNotEmpty && cmdClientNom != null) {
+                    isOwnOrder = (cmdClientNom.toLowerCase().trim() == currentUserName.toLowerCase().trim());
+                  }
+                }
+
+                if (isOwnOrder) {
+                  final cmdItems = cmd['items'] as List? ?? [];
+                  for (var item in cmdItems) {
+                    item['commandeStatut'] = cmd['statut'];
+                    allSessionItems.add(item);
+                  }
                 }
               }
             }

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/custom_bottom_nav.dart';
+import '../../core/services/reservation_service.dart';
+import '../../core/config/api_config.dart';
 
 enum ReservationFilter { toutes, avenir, passees }
 
@@ -13,73 +16,180 @@ class ReservationHistoryScreen extends StatefulWidget {
 
 class _ReservationHistoryScreenState extends State<ReservationHistoryScreen> {
   ReservationFilter _selectedFilter = ReservationFilter.toutes;
+  List<dynamic> _reservations = [];
+  Map<String, dynamic> _etablissementMap = {};
+  bool _isLoading = true;
 
-  // Static list of reservations matching the screenshot exactly
-  final List<Map<String, dynamic>> _allReservations = [
-    {
-      'id': '1',
-      'branch': 'Beecool · Anfa',
-      'status': 'À VENIR',
-      'time': '13 fév · 20:30',
-      'details': '4 pers · Table 05',
-      'dateMonth': 'FÉV',
-      'dateDay': '13',
-      'dateWeek': 'VEN',
-      'imageUrl': 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&q=80&w=250',
-      'isActive': true,
-    },
-    {
-      'id': '2',
-      'branch': 'Beecool · Marina',
-      'status': 'EN ATTENTE',
-      'time': '21 fév · 13:00',
-      'details': '2 pers · Table 12',
-      'dateMonth': 'FÉV',
-      'dateDay': '21',
-      'dateWeek': 'SAM',
-      'imageUrl': 'https://images.unsplash.com/photo-1552566626-52f8b828add9?auto=format&fit=crop&q=80&w=250',
-      'isActive': false,
-    },
-    {
-      'id': '3',
-      'branch': 'Beecool · Anfa',
-      'status': 'PASSÉE',
-      'time': '18 jan · 21:00',
-      'details': '6 pers · Table 09',
-      'dateMonth': 'JAN',
-      'dateDay': '18',
-      'dateWeek': 'SAM',
-      'imageUrl': 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&q=80&w=250',
-      'isActive': false,
-    },
-    {
-      'id': '4',
-      'branch': 'Beecool · Rabat',
-      'status': 'ANNULÉE',
-      'time': '02 jan · 20:00',
-      'details': '3 pers · Table 03',
-      'dateMonth': 'JAN',
-      'dateDay': '02',
-      'dateWeek': 'VEN',
-      'imageUrl': 'https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&q=80&w=250',
-      'isActive': false,
-    },
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
 
-  List<Map<String, dynamic>> get _filteredReservations {
-    switch (_selectedFilter) {
-      case ReservationFilter.toutes:
-        return _allReservations;
-      case ReservationFilter.avenir:
-        return _allReservations.where((res) => res['status'] == 'À VENIR' || res['status'] == 'EN ATTENTE').toList();
-      case ReservationFilter.passees:
-        return _allReservations.where((res) => res['status'] == 'PASSÉE' || res['status'] == 'ANNULÉE').toList();
+  Future<void> _loadData() async {
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+    try {
+      // 1. Fetch establishments to map details (name, image)
+      final dio = Dio();
+      final etabRes = await dio.get('${ApiConfig.baseUrl}${ApiConfig.etablissements}');
+      if (etabRes.statusCode == 200 && etabRes.data is List) {
+        final Map<String, dynamic> tempMap = {};
+        for (var etab in etabRes.data) {
+          tempMap[etab['id'].toString()] = etab;
+        }
+        _etablissementMap = tempMap;
+      }
+
+      // 2. Fetch user's reservations from backend
+      final userReservations = await ReservationService().fetchUserReservations();
+      
+      _reservations = userReservations;
+      // Sort: latest reservation first
+      _reservations.sort((a, b) {
+        final dtA = DateTime.parse(a['dateHeure']);
+        final dtB = DateTime.parse(b['dateHeure']);
+        return dtB.compareTo(dtA);
+      });
+    } catch (e) {
+      debugPrint("Erreur lors de la récupération de l'historique : $e");
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
-  int get _countToutes => _allReservations.length;
-  int get _countAvenir => _allReservations.where((res) => res['status'] == 'À VENIR' || res['status'] == 'EN ATTENTE').length;
-  int get _countPassees => _allReservations.where((res) => res['status'] == 'PASSÉE' || res['status'] == 'ANNULÉE').length;
+  List<Map<String, dynamic>> get _filteredReservations {
+    final List<Map<String, dynamic>> mapped = _reservations.map<Map<String, dynamic>>((res) {
+      final String id = res['id'].toString();
+      final String etabId = res['etablissementId']?.toString() ?? '';
+      
+      final etab = _etablissementMap[etabId];
+      final String branchName = etab != null ? "Beecool · ${etab['nom']}" : "Beecool Restaurant";
+      final String imageUrl = (etab != null && etab['image'] != null && etab['image'].toString().isNotEmpty)
+          ? etab['image'].toString()
+          : 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&q=80&w=250';
+      
+      final String dateHeureStr = res['dateHeure'] ?? '';
+      DateTime dt = DateTime.now();
+      if (dateHeureStr.isNotEmpty) {
+        try {
+          dt = DateTime.parse(dateHeureStr);
+        } catch (_) {}
+      }
+
+      // Month abbreviation in French
+      const months = ['JAN', 'FÉV', 'MAR', 'AVR', 'MAI', 'JUI', 'JUL', 'AOÛ', 'SEP', 'OCT', 'NOV', 'DÉC'];
+      final String dateMonth = dt.month >= 1 && dt.month <= 12 ? months[dt.month - 1] : 'FÉV';
+      final String dateDay = dt.day.toString().padLeft(2, '0');
+      
+      const weekdays = ['LUN', 'MAR', 'MER', 'JEU', 'VEN', 'SAM', 'DIM'];
+      final String dateWeek = dt.weekday >= 1 && dt.weekday <= 7 ? weekdays[dt.weekday - 1] : 'VEN';
+
+      final String formattedTime = "${dt.day} ${dateMonth.toLowerCase()} · ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
+      final String details = "${res['nbPersonnes']} pers${res['numeroTable'] != null ? ' · Table ${res['numeroTable']}' : ''}";
+
+      // Status logic: CONFIRMEE -> À VENIR, EN_ATTENTE -> EN ATTENTE, ANNULEE -> ANNULÉE, date past -> PASSÉE
+      final bool isPast = dt.isBefore(DateTime.now());
+      String statusLabel = 'À VENIR';
+      
+      final String apiStatut = res['statut']?.toString()?.toUpperCase() ?? '';
+      if (apiStatut == 'ANNULEE' || apiStatut == 'ANNULE') {
+        statusLabel = 'ANNULÉE';
+      } else if (isPast) {
+        statusLabel = 'PASSÉE';
+      } else if (apiStatut == 'EN_ATTENTE') {
+        statusLabel = 'EN ATTENTE';
+      } else {
+        statusLabel = 'À VENIR';
+      }
+
+      final bool isActive = statusLabel == 'À VENIR' || statusLabel == 'EN ATTENTE';
+
+      return {
+        'id': id,
+        'rawId': res['id'],
+        'branch': branchName,
+        'status': statusLabel,
+        'time': formattedTime,
+        'details': details,
+        'dateMonth': dateMonth,
+        'dateDay': dateDay,
+        'dateWeek': dateWeek,
+        'imageUrl': imageUrl,
+        'isActive': isActive,
+        'montantCaution': res['montantCaution'],
+        'cautionPayee': res['cautionPayee'],
+        'dateHeureStr': dateHeureStr,
+      };
+    }).toList();
+
+    switch (_selectedFilter) {
+      case ReservationFilter.toutes:
+        return mapped;
+      case ReservationFilter.avenir:
+        return mapped.where((res) => res['status'] == 'À VENIR' || res['status'] == 'EN ATTENTE').toList();
+      case ReservationFilter.passees:
+        return mapped.where((res) => res['status'] == 'PASSÉE' || res['status'] == 'ANNULÉE').toList();
+    }
+  }
+
+  int get _countToutes => _filteredReservationsCount(ReservationFilter.toutes);
+  int get _countAvenir => _filteredReservationsCount(ReservationFilter.avenir);
+  int get _countPassees => _filteredReservationsCount(ReservationFilter.passees);
+
+  int _filteredReservationsCount(ReservationFilter filter) {
+    final List<Map<String, dynamic>> mapped = _reservations.map<Map<String, dynamic>>((res) {
+      final String dateHeureStr = res['dateHeure'] ?? '';
+      DateTime dt = DateTime.now();
+      if (dateHeureStr.isNotEmpty) {
+        try {
+          dt = DateTime.parse(dateHeureStr);
+        } catch (_) {}
+      }
+      final bool isPast = dt.isBefore(DateTime.now());
+      String statusLabel = 'À VENIR';
+      
+      final String apiStatut = res['statut']?.toString()?.toUpperCase() ?? '';
+      if (apiStatut == 'ANNULEE' || apiStatut == 'ANNULE') {
+        statusLabel = 'ANNULÉE';
+      } else if (isPast) {
+        statusLabel = 'PASSÉE';
+      } else if (apiStatut == 'EN_ATTENTE') {
+        statusLabel = 'EN ATTENTE';
+      } else {
+        statusLabel = 'À VENIR';
+      }
+
+      return {'status': statusLabel};
+    }).toList();
+
+    if (filter == ReservationFilter.toutes) return mapped.length;
+    if (filter == ReservationFilter.avenir) return mapped.where((res) => res['status'] == 'À VENIR' || res['status'] == 'EN ATTENTE').length;
+    return mapped.where((res) => res['status'] == 'PASSÉE' || res['status'] == 'ANNULÉE').length;
+  }
+
+  int get _firstReservationYear {
+    if (_reservations.isEmpty) {
+      return 2024; // Default fallback
+    }
+    int oldestYear = DateTime.now().year;
+    bool hasValidYear = false;
+    for (var res in _reservations) {
+      final dateHeureStr = res['dateHeure']?.toString() ?? '';
+      if (dateHeureStr.isNotEmpty) {
+        try {
+          final dt = DateTime.parse(dateHeureStr);
+          if (dt.year < oldestYear) {
+            oldestYear = dt.year;
+            hasValidYear = true;
+          }
+        } catch (_) {}
+      }
+    }
+    return hasValidYear ? oldestYear : 2024;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -87,68 +197,73 @@ class _ReservationHistoryScreenState extends State<ReservationHistoryScreen> {
     
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: Stack(
-        children: [
-          // Scrollable CustomScrollView with sticky tabs
-          CustomScrollView(
-            physics: const BouncingScrollPhysics(),
-            slivers: [
-              // 1. Header (without tabs)
-              SliverToBoxAdapter(
-                child: _buildHeader(statusBarHeight),
-              ),
+      body: RefreshIndicator(
+        onRefresh: _loadData,
+        color: const Color(0xFFFC9910),
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+          slivers: [
+            // 1. Header (without tabs)
+            SliverToBoxAdapter(
+              child: _buildHeader(statusBarHeight),
+            ),
 
-              // 2. Sticky Tab Bar
-              SliverPersistentHeader(
-                pinned: true,
-                delegate: _StickyTabBarDelegate(
-                  child: _buildFilterTabs(),
-                ),
+            // 2. Sticky Tab Bar
+            SliverPersistentHeader(
+              pinned: true,
+              delegate: _StickyTabBarDelegate(
+                child: _buildFilterTabs(),
               ),
+            ),
 
-              // 3. Content list
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
-                sliver: _filteredReservations.isEmpty
-                    ? SliverToBoxAdapter(child: _buildEmptyState())
-                    : SliverList(
-                        delegate: SliverChildBuilderDelegate(
-                          (context, index) {
-                            final res = _filteredReservations[index];
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 16.0),
-                              child: _buildReservationCard(res),
-                            );
-                          },
-                          childCount: _filteredReservations.length,
+            // 3. Content list
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
+              sliver: _isLoading
+                  ? const SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.only(top: 80),
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            color: Color(0xFFFC9910),
+                            strokeWidth: 3,
+                          ),
                         ),
                       ),
-              ),
-            ],
-          ),
-
-          // ── Floating Cart FAB ──
-          Positioned(
-            bottom: 35,
-            left: MediaQuery.of(context).size.width / 2 - 28,
-            child: CustomBottomNav.buildCartFAB(context),
-          ),
-        ],
+                    )
+                  : _filteredReservations.isEmpty
+                      ? SliverToBoxAdapter(child: _buildEmptyState())
+                      : SliverList(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) {
+                              final res = _filteredReservations[index];
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 16.0),
+                                child: _buildReservationCard(res),
+                              );
+                            },
+                            childCount: _filteredReservations.length,
+                          ),
+                        ),
+            ),
+          ],
+        ),
       ),
       bottomNavigationBar: const CustomBottomNav(selectedIndex: 3), // highlight Profile tab
+      floatingActionButton: CustomBottomNav.buildCartFAB(context),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
     );
   }
 
-
   Widget _buildHeader(double statusBarHeight) {
     return Container(
-      height: 240, // Reduced from 290 since tabs are now sticky below
+      height: 240,
       width: double.infinity,
       decoration: const BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            Color(0xFFFFD200), // Warm gold
-            Color(0xFFF7971E), // Amber orange
+            Color(0xFFF59E0B), // Warm rich amber
+            Color(0xFFD97706), // Deep rich gold/honey
           ],
           begin: Alignment.topRight,
           end: Alignment.bottomLeft,
@@ -160,16 +275,56 @@ class _ReservationHistoryScreenState extends State<ReservationHistoryScreen> {
       ),
       child: Stack(
         children: [
-          // Background soft geometric overlays
+          // Geometric decoration 1: Rotated Hexagon at top right
           Positioned(
-            top: -20,
-            right: -20,
-            child: Container(
-              width: 170,
-              height: 170,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.08),
+            top: -40,
+            right: -30,
+            child: Transform.rotate(
+              angle: 0.4,
+              child: Container(
+                width: 160,
+                height: 160,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(36),
+                  border: Border.all(color: Colors.white.withOpacity(0.12), width: 2),
+                  color: Colors.white.withOpacity(0.03),
+                ),
+              ),
+            ),
+          ),
+
+          // Geometric decoration 2: Rotated Hexagon at bottom left
+          Positioned(
+            bottom: -30,
+            left: -40,
+            child: Transform.rotate(
+              angle: -0.2,
+              child: Container(
+                width: 140,
+                height: 140,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(28),
+                  border: Border.all(color: Colors.white.withOpacity(0.08), width: 1.5),
+                  color: Colors.white.withOpacity(0.02),
+                ),
+              ),
+            ),
+          ),
+
+          // Geometric decoration 3: Small diamond decoration
+          Positioned(
+            top: 80,
+            left: 70,
+            child: Transform.rotate(
+              angle: 0.8,
+              child: Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.white.withOpacity(0.15), width: 1),
+                  color: Colors.white.withOpacity(0.04),
+                ),
               ),
             ),
           ),
@@ -190,16 +345,17 @@ class _ReservationHistoryScreenState extends State<ReservationHistoryScreen> {
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: Colors.white.withOpacity(0.4),
+                          color: Colors.white.withOpacity(0.15),
+                          border: Border.all(color: Colors.white.withOpacity(0.25), width: 1),
                         ),
-                        child: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF0F172A), size: 16),
+                        child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 16),
                       ),
                     ),
                     
                     const Text(
                       'Mes réservations',
                       style: TextStyle(
-                        color: Color(0xFF0F172A),
+                        color: Colors.white,
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
                         letterSpacing: 0.2,
@@ -211,29 +367,30 @@ class _ReservationHistoryScreenState extends State<ReservationHistoryScreen> {
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: Colors.white.withOpacity(0.4),
+                        color: Colors.white.withOpacity(0.15),
+                        border: Border.all(color: Colors.white.withOpacity(0.25), width: 1),
                       ),
-                      child: const Icon(Icons.search_rounded, color: Color(0xFF0F172A), size: 16),
+                      child: const Icon(Icons.search_rounded, color: Colors.white, size: 16),
                     ),
                   ],
                 ),
 
-                const SizedBox(height: 35),
+                const SizedBox(height: 25),
 
                 // "AU TOTAL" Text
-                const Text(
+                Text(
                   'AU TOTAL',
                   style: TextStyle(
-                    color: Color(0xFF7E7260),
+                    color: Colors.white.withOpacity(0.7),
                     fontSize: 10,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 1.5,
                   ),
                 ),
 
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
 
-                // Large "12 réservations" title
+                // Large reservations count title
                 Row(
                   textBaseline: TextBaseline.alphabetic,
                   crossAxisAlignment: CrossAxisAlignment.baseline,
@@ -241,16 +398,16 @@ class _ReservationHistoryScreenState extends State<ReservationHistoryScreen> {
                     Text(
                       '$_countToutes',
                       style: const TextStyle(
-                        color: Color(0xFF0F172A),
-                        fontSize: 48,
+                        color: Colors.white,
+                        fontSize: 44,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
                     const SizedBox(width: 8),
-                    const Text(
+                    Text(
                       'réservations',
                       style: TextStyle(
-                        color: Color(0xFF0F172A),
+                        color: Colors.white.withOpacity(0.85),
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                       ),
@@ -258,13 +415,13 @@ class _ReservationHistoryScreenState extends State<ReservationHistoryScreen> {
                   ],
                 ),
 
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
 
-                // Subtitle: 2 à venir • Membre Or depuis 2024
-                const Text(
-                  '2 à venir · Membre Or depuis 2024',
+                // Subtitle showing current upcoming reservations
+                Text(
+                  '$_countAvenir à venir · Membre Or depuis $_firstReservationYear',
                   style: TextStyle(
-                    color: Color(0xFF5C3F00),
+                    color: Colors.white.withOpacity(0.9),
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
                   ),
@@ -315,7 +472,7 @@ class _ReservationHistoryScreenState extends State<ReservationHistoryScreen> {
         },
         child: Container(
           decoration: BoxDecoration(
-            color: isSelected ? const Color(0xFF0A1128) : Colors.transparent, // deep dark blue background
+            color: isSelected ? const Color(0xFF132B49) : Colors.transparent,
             borderRadius: BorderRadius.circular(24),
           ),
           alignment: Alignment.center,
@@ -331,11 +488,10 @@ class _ReservationHistoryScreenState extends State<ReservationHistoryScreen> {
                 ),
               ),
               const SizedBox(width: 6),
-              // Tiny round capsule badge
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                 decoration: BoxDecoration(
-                  color: isSelected ? const Color(0xFFFC9910) : const Color(0xFFE2E8F0), // gold if selected, grey if not
+                  color: isSelected ? const Color(0xFFFC9910) : const Color(0xFFE2E8F0),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
@@ -358,203 +514,444 @@ class _ReservationHistoryScreenState extends State<ReservationHistoryScreen> {
     bool isActive = res['isActive'] as bool;
     String status = res['status'] as String;
     
-    // Status color selection
     Color statusBgColor;
     Color statusTextColor;
     
     if (status == 'À VENIR') {
-      statusBgColor = const Color(0xFFFC9910); // amber
+      statusBgColor = const Color(0xFFFC9910);
       statusTextColor = Colors.white;
     } else if (status == 'EN ATTENTE') {
-      statusBgColor = const Color(0xFFE0F2FE); // light blue
-      statusTextColor = const Color(0xFF0369A1); // darker blue
+      statusBgColor = const Color(0xFFE0F2FE);
+      statusTextColor = const Color(0xFF0369A1);
     } else if (status == 'PASSÉE') {
-      statusBgColor = const Color(0xFFF1F5F9); // light grey
-      statusTextColor = const Color(0xFF64748B); // darker grey
+      statusBgColor = const Color(0xFFF1F5F9);
+      statusTextColor = const Color(0xFF64748B);
     } else {
-      statusBgColor = const Color(0xFFFFECEF); // light pink
-      statusTextColor = const Color(0xFFD32F2F); // red
+      statusBgColor = const Color(0xFFFFECEF);
+      statusTextColor = const Color(0xFFD32F2F);
     }
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isActive ? const Color(0xFFFC9910) : Colors.transparent, // amber-gold border around active card
-          width: 1.5,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+    return GestureDetector(
+      onTap: () => _showReservationDetails(res),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isActive ? const Color(0xFFFC9910) : Colors.transparent,
+            width: 1.5,
           ),
-        ],
-      ),
-      padding: const EdgeInsets.all(12),
-      child: Row(
-        children: [
-          // Left: Image container with Date overlay
-          ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: Stack(
-              children: [
-                // Network image with premium fade placeholder
-                Image.network(
-                  res['imageUrl'],
-                  width: 75,
-                  height: 75,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => Container(
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            // Left: Image container with Date overlay
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Stack(
+                children: [
+                  Image.network(
+                    res['imageUrl'],
                     width: 75,
                     height: 75,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [Colors.grey.shade300, Colors.grey.shade400],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) => Container(
+                      width: 75,
+                      height: 75,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Colors.grey.shade300, Colors.grey.shade400],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                // Dark glass overlay
-                Container(
-                  width: 75,
-                  height: 75,
-                  color: Colors.black.withOpacity(0.35),
-                ),
-                // Date text container overlay
-                SizedBox(
-                  width: 75,
-                  height: 75,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  Container(
+                    width: 75,
+                    height: 75,
+                    color: Colors.black.withOpacity(0.35),
+                  ),
+                  SizedBox(
+                    width: 75,
+                    height: 75,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          res['dateMonth'],
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                        const SizedBox(height: 1),
+                        Text(
+                          res['dateDay'],
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 1),
+                        Text(
+                          res['dateWeek'],
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            const SizedBox(width: 14),
+
+            // Center: Reservation content
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        res['dateMonth'],
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1,
+                      Expanded(
+                        child: Text(
+                          res['branch'],
+                          style: const TextStyle(
+                            color: Color(0xFF0F172A),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      const SizedBox(height: 1),
-                      Text(
-                        res['dateDay'],
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
+                      const SizedBox(width: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: statusBgColor,
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                      ),
-                      const SizedBox(height: 1),
-                      Text(
-                        res['dateWeek'],
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.5,
+                        child: Text(
+                          status,
+                          style: TextStyle(
+                            color: statusTextColor,
+                            fontSize: 8,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
+                          ),
                         ),
                       ),
                     ],
                   ),
+                  
+                  const SizedBox(height: 6),
+
+                  Row(
+                    children: [
+                      const Icon(Icons.access_time_rounded, color: Color(0xFF94A3B8), size: 13),
+                      const SizedBox(width: 5),
+                      Text(
+                        res['time'],
+                        style: const TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  
+                  const SizedBox(height: 4),
+
+                  Row(
+                    children: [
+                      const Icon(Icons.people_alt_rounded, color: Color(0xFF94A3B8), size: 13),
+                      const SizedBox(width: 5),
+                      Text(
+                        res['details'],
+                        style: const TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            
+            if (isActive) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: const BoxDecoration(
+                  color: Color(0xFF0A1128),
+                  shape: BoxShape.circle,
                 ),
-              ],
+                child: const Icon(Icons.chevron_right_rounded, color: Colors.white, size: 16),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showReservationDetails(Map<String, dynamic> res) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) {
+        final bool isActive = res['isActive'] as bool;
+        final String status = res['status'] as String;
+        final double caution = (res['montantCaution'] as num?)?.toDouble() ?? 0.0;
+        final bool isCautionPayee = res['cautionPayee'] as bool? ?? false;
+
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(30),
+              topRight: Radius.circular(30),
             ),
           ),
-          
-          const SizedBox(width: 14),
+          padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 50,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
 
-          // Center: Reservation content
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Top row: Branch Name & Status Badge
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
                       res['branch'],
                       style: const TextStyle(
                         color: Color(0xFF0F172A),
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: statusBgColor,
-                        borderRadius: BorderRadius.circular(12),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: isActive ? const Color(0xFFFC9910).withOpacity(0.1) : Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      status,
+                      style: TextStyle(
+                        color: isActive ? const Color(0xFFFC9910) : Colors.grey.shade600,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
                       ),
-                      child: Text(
-                        status,
-                        style: TextStyle(
-                          color: statusTextColor,
-                          fontSize: 8,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+
+              Divider(color: Colors.grey.shade100, height: 1),
+              const SizedBox(height: 20),
+
+              _buildDetailRow(Icons.calendar_today_rounded, "Date & Heure", res['time']),
+              const SizedBox(height: 14),
+              _buildDetailRow(Icons.people_alt_rounded, "Invités & Table", res['details']),
+              const SizedBox(height: 14),
+              _buildDetailRow(
+                Icons.security_rounded,
+                "Caution de réservation",
+                caution > 0
+                    ? "${caution.toStringAsFixed(2)} DT (${isCautionPayee ? 'Payée ✅' : 'Non payée ❌'})"
+                    : "Aucune caution",
+              ),
+              
+              const SizedBox(height: 30),
+
+              if (isActive) ...[
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed: () => _confirmCancellation(res['rawId'], res['dateHeureStr']),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFFFF2F2),
+                      foregroundColor: const Color(0xFFDC2626),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        side: const BorderSide(color: Color(0xFFFEE2E2), width: 1.5),
+                      ),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.cancel_outlined, size: 18),
+                        SizedBox(width: 8),
+                        Text(
+                          "Annuler ma réservation",
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
-                      ),
+                      ],
                     ),
-                  ],
-                ),
-                
-                const SizedBox(height: 6),
-
-                // Time Info
-                Row(
-                  children: [
-                    const Icon(Icons.access_time_rounded, color: Color(0xFF94A3B8), size: 13),
-                    const SizedBox(width: 5),
-                    Text(
-                      res['time'],
-                      style: const TextStyle(
-                        color: Color(0xFF64748B),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-                
-                const SizedBox(height: 4),
-
-                // Details Info
-                Row(
-                  children: [
-                    const Icon(Icons.people_alt_rounded, color: Color(0xFF94A3B8), size: 13),
-                    const SizedBox(width: 5),
-                    Text(
-                      res['details'],
-                      style: const TextStyle(
-                        color: Color(0xFF64748B),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ],
-            ),
+            ],
           ),
-          
-          // Right action chevron button (only visible on active cards or as design element)
-          if (isActive) ...[
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: const BoxDecoration(
-                color: Color(0xFF0A1128), // dark blue button circle
-                shape: BoxShape.circle,
+        );
+      },
+    );
+  }
+
+  Widget _buildDetailRow(IconData icon, String label, String value) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: const Color(0xFF64748B), size: 18),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  color: Colors.grey.shade400,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.5,
+                ),
               ),
-              child: const Icon(Icons.chevron_right_rounded, color: Colors.white, size: 16),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: const TextStyle(
+                  color: Color(0xFF0F172A),
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _confirmCancellation(dynamic reservationId, String? dateHeureStr) {
+    bool isLessThan24h = false;
+    if (dateHeureStr != null && dateHeureStr.isNotEmpty) {
+      try {
+        final dt = DateTime.parse(dateHeureStr);
+        final diff = dt.difference(DateTime.now());
+        if (diff.inHours < 24 && diff.inHours >= 0) {
+          isLessThan24h = true;
+        }
+      } catch (_) {}
+    }
+
+    Navigator.pop(context);
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          "Annuler la réservation ?",
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          isLessThan24h
+              ? "Êtes-vous sûr de vouloir annuler cette réservation ?\n\n⚠️ Attention : L'annulation à moins de 24h ne sera pas remboursée."
+              : "Êtes-vous sûr de vouloir annuler cette réservation ? Cette action est irréversible et le remboursement de la caution sera traité sous 24h.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Non, garder", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              setState(() => _isLoading = true);
+              try {
+                final int idVal = reservationId is num ? reservationId.toInt() : int.parse(reservationId.toString());
+                final success = await ReservationService().cancelReservation(idVal);
+                if (success) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text("Votre réservation a été annulée avec succès."),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text("Une erreur est survenue lors de l'annulation."),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(e.toString().replaceAll("Exception: ", "")),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              } finally {
+                _loadData();
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFDC2626),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
-          ],
+            child: const Text("Oui, annuler", style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
         ],
       ),
     );
@@ -562,7 +959,7 @@ class _ReservationHistoryScreenState extends State<ReservationHistoryScreen> {
 
   Widget _buildEmptyState() {
     return Padding(
-      padding: const EdgeInsets.only(top: 40),
+      padding: const EdgeInsets.only(top: 80),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -587,14 +984,14 @@ class _StickyTabBarDelegate extends SliverPersistentHeaderDelegate {
   _StickyTabBarDelegate({required this.child});
 
   @override
-  double get minExtent => 76.0; // 60 height of tabs + 16 vertical padding
+  double get minExtent => 76.0;
   @override
   double get maxExtent => 76.0;
 
   @override
   Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
     return Container(
-      color: AppColors.background, // same as page background so the grid/list scrolls cleanly behind it
+      color: AppColors.background,
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       alignment: Alignment.center,
       child: child,
@@ -603,6 +1000,6 @@ class _StickyTabBarDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   bool shouldRebuild(_StickyTabBarDelegate oldDelegate) {
-    return false;
+    return true;
   }
 }

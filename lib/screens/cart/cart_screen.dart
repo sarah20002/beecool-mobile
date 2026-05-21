@@ -8,6 +8,7 @@ import '../../core/services/auth_service.dart';
 import '../../core/config/api_config.dart';
 import '../home/home_screen.dart';
 import '../menu/menu_screen.dart';
+import '../menu/dish_detail_screen.dart';
 import 'payment_screen.dart';
 import 'order_tracking_screen.dart';
 import '../../core/services/table_service.dart';
@@ -26,6 +27,8 @@ class _CartScreenState extends State<CartScreen> {
   bool _isSubmitting = false;
   List<dynamic> _serverOrders = [];
   bool _isLoadingOrders = false;
+  String? _currentUserId;
+  String? _currentUserName;
 
   @override
   void initState() {
@@ -50,6 +53,12 @@ class _CartScreenState extends State<CartScreen> {
 
     setState(() => _isLoadingOrders = true);
     try {
+      final prefs = await SharedPreferences.getInstance();
+      _currentUserId = prefs.getString('user_id');
+      final userNom = prefs.getString('user_nom') ?? '';
+      final userPrenom = prefs.getString('user_prenom') ?? '';
+      _currentUserName = userNom.isNotEmpty ? '$userPrenom $userNom' : '';
+
       final jwtToken = await AuthService().getToken();
       final scanToken = await TableService().getSessionToken();
       final activeToken = jwtToken ?? scanToken;
@@ -122,7 +131,7 @@ class _CartScreenState extends State<CartScreen> {
       if (!isRealClient && (resolvedGuestName == null || resolvedGuestName.isEmpty)) {
         resolvedGuestName = prefs.getString('user_prenom') ?? 'Invite';
       }
-      final guestId = prefs.getString('guest_id');
+      final clientId = isRealClient ? prefs.getString('user_id') : prefs.getString('guest_id');
 
       final token = await AuthService().getToken();
       final scanToken = await TableService().getSessionToken();
@@ -141,8 +150,8 @@ class _CartScreenState extends State<CartScreen> {
 
       final orderData = {
         'sessionToken': _cartService.sessionToken,
-        if (resolvedGuestName != null && resolvedGuestName.isNotEmpty) 'nomInvite': resolvedGuestName,
-        if (!isRealClient && guestId != null && guestId.isNotEmpty) 'clientId': guestId,
+        if (!isRealClient && resolvedGuestName != null && resolvedGuestName.isNotEmpty) 'nomInvite': resolvedGuestName,
+        if (clientId != null && clientId.isNotEmpty) 'clientId': clientId,
         'items': _cartService.items.map((item) => item.toJson()).toList(),
       };
 
@@ -295,6 +304,7 @@ class _CartScreenState extends State<CartScreen> {
                   GestureDetector(
                     onTap: () {
                       if (formKey.currentState!.validate()) {
+                        FocusScope.of(context).unfocus();
                         Navigator.pop(context);
                         _submitOrder(guestName: nameController.text.trim());
                       }
@@ -335,6 +345,7 @@ class _CartScreenState extends State<CartScreen> {
   @override
   Widget build(BuildContext context) {
     final items = _cartService.items;
+    final serverItems = _getGroupedServerItems();
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -373,7 +384,7 @@ class _CartScreenState extends State<CartScreen> {
         children: [
           _buildStepper(),
           Expanded(
-            child: (items.isEmpty && _serverOrders.isEmpty)
+            child: (items.isEmpty && serverItems.isEmpty)
                 ? _buildEmptyState()
                 : SingleChildScrollView(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -381,7 +392,7 @@ class _CartScreenState extends State<CartScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         // Return to menu button above the lists
-                        if (items.isNotEmpty || _serverOrders.isNotEmpty) ...[
+                        if (items.isNotEmpty || serverItems.isNotEmpty) ...[
                           const SizedBox(height: 10),
                           Center(
                             child: GestureDetector(
@@ -419,14 +430,14 @@ class _CartScreenState extends State<CartScreen> {
                             item: entry.value,
                           )),
                         ],
-                        if (_serverOrders.isNotEmpty) ...[
+                        if (serverItems.isNotEmpty) ...[
                           const SizedBox(height: 30),
                           const Text(
                             'COMMANDES EN CUISINE (CONFIRMÉES)',
                             style: TextStyle(color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.5),
                           ),
                           const SizedBox(height: 20),
-                          ..._getGroupedServerItems().map((item) => _buildServerItem(item)),
+                          ...serverItems.map((item) => _buildServerItem(item)),
                         ],
                         const SizedBox(height: 30),
                       ],
@@ -435,7 +446,7 @@ class _CartScreenState extends State<CartScreen> {
           ),
           if (items.isNotEmpty) 
             _buildPaymentRecap()
-          else if (_serverOrders.isNotEmpty)
+          else if (serverItems.isNotEmpty)
             _buildTrackingReturnButton(),
         ],
       ),
@@ -446,12 +457,27 @@ class _CartScreenState extends State<CartScreen> {
     final List<dynamic> allItems = [];
     for (var order in _serverOrders) {
       final String orderStatut = order['statut'] ?? 'EN_ATTENTE';
-      for (var item in order['items']) {
-        final Map<String, dynamic> itemCopy = Map<String, dynamic>.from(item);
-        if (itemCopy['statut'] == null) {
-          itemCopy['statut'] = orderStatut;
+      
+      final String? cmdClientId = order['clientId']?.toString();
+      final String? cmdClientNom = order['clientNom']?.toString();
+      
+      bool isOwnOrder = false;
+      if (_currentUserId != null && _currentUserId!.isNotEmpty && cmdClientId != null) {
+        isOwnOrder = (cmdClientId == _currentUserId);
+      } else if (_currentUserName != null && _currentUserName!.isNotEmpty && cmdClientNom != null) {
+        isOwnOrder = (cmdClientNom.toLowerCase().trim() == _currentUserName!.toLowerCase().trim());
+      } else {
+        isOwnOrder = true; // fallback
+      }
+
+      if (isOwnOrder) {
+        for (var item in order['items']) {
+          final Map<String, dynamic> itemCopy = Map<String, dynamic>.from(item);
+          if (itemCopy['statut'] == null) {
+            itemCopy['statut'] = orderStatut;
+          }
+          allItems.add(itemCopy);
         }
-        allItems.add(itemCopy);
       }
     }
 
@@ -741,75 +767,96 @@ class _CartScreenState extends State<CartScreen> {
 
   Widget _buildCartItem({required int index, required CartItem item}) {
     return FadeInUp(
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 15),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(25),
-          border: Border.all(color: Colors.grey.shade100, width: 1.5),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 15,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: Image.network(item.imageUrl, width: 80, height: 80, fit: BoxFit.cover),
-            ),
-            const SizedBox(width: 15),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(item.name, style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary, fontSize: 14, fontFamily: 'Serif')),
-                      Text('${(item.price * item.quantity).toStringAsFixed(2)} DT', style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.secondary, fontSize: 14)),
-                    ],
-                  ),
-                  if (item.notes.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(item.notes, style: const TextStyle(color: Colors.grey, fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
-                  ],
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(30), border: Border.all(color: Colors.grey.shade100)),
-                        child: Row(
-                          children: [
-                            _qtyBtn(Icons.remove, () => _cartService.updateQuantity(index, -1)),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 12),
-                              child: Text('${item.quantity}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                            ),
-                            _qtyBtn(Icons.add, () => _cartService.updateQuantity(index, 1), isAdd: true),
-                          ],
-                        ),
-                      ),
-                      GestureDetector(
-                        onTap: () => _cartService.removeItem(index),
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(12)),
-                          child: const Icon(Icons.delete_outline_rounded, color: Colors.grey, size: 20),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+      child: GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => DishDetailScreen(
+                dish: {
+                  'id': item.id,
+                  'nom': item.name,
+                  'prix': item.price,
+                  'image': item.imageUrl,
+                },
+                isEditing: true,
+                cartItemIndex: index,
+                initialNotes: item.notes,
+                initialQuantity: item.quantity,
               ),
             ),
-          ],
+          );
+        },
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 15),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(25),
+            border: Border.all(color: Colors.grey.shade100, width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 15,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: Image.network(item.imageUrl, width: 80, height: 80, fit: BoxFit.cover),
+              ),
+              const SizedBox(width: 15),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(item.name, style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary, fontSize: 14, fontFamily: 'Serif')),
+                        Text('${(item.price * item.quantity).toStringAsFixed(2)} DT', style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.secondary, fontSize: 14)),
+                      ],
+                    ),
+                    if (item.notes.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(item.notes, style: const TextStyle(color: Colors.grey, fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ],
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(30), border: Border.all(color: Colors.grey.shade100)),
+                          child: Row(
+                            children: [
+                              _qtyBtn(Icons.remove, () => _cartService.updateQuantity(index, -1)),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 12),
+                                child: Text('${item.quantity}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                              ),
+                              _qtyBtn(Icons.add, () => _cartService.updateQuantity(index, 1), isAdd: true),
+                            ],
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () => _cartService.removeItem(index),
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(12)),
+                            child: const Icon(Icons.delete_outline_rounded, color: Colors.grey, size: 20),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

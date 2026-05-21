@@ -98,6 +98,18 @@ class CartService extends ChangeNotifier {
     }
   }
 
+  void updateItem(int index, {int? quantity, String? notes}) {
+    if (index >= 0 && index < _items.length) {
+      if (quantity != null) {
+        _items[index].quantity = quantity;
+      }
+      if (notes != null) {
+        _items[index].notes = notes;
+      }
+      notifyListeners();
+    }
+  }
+
   double get total {
     return _items.fold(0, (sum, item) => sum + (item.price * item.quantity));
   }

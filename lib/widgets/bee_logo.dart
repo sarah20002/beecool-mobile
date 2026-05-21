@@ -1,13 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'dart:math' as math;
 
 class BeeIllustration extends StatelessWidget {
   final double height;
-  const BeeIllustration({super.key, this.height = 40});
+  final double wingFlap; // 0.0 to 1.0 representing the wing animation progress
+
+  const BeeIllustration({
+    super.key, 
+    this.height = 40,
+    this.wingFlap = 0.0,
+  });
 
   @override
   Widget build(BuildContext context) {
+    // Calculate wing rotation: oscillate between -35 and -5 degrees
+    final double rotation = -20.0 + 15.0 * math.sin(wingFlap * 2 * math.pi);
+    // Calculate wing Y scale: compress during flap to look 3D (0.7 to 1.0)
+    final double scaleY = 0.85 + 0.15 * math.cos(wingFlap * 2 * math.pi);
+
     return SvgPicture.string(
       '''
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
@@ -22,7 +34,7 @@ class BeeIllustration extends StatelessWidget {
           <path d="M -15 -20 Q -15 0 -15 20" stroke="#1a1a1a" stroke-width="5" fill="none" stroke-linecap="round" />
           <path d="M 0 -22 Q 0 0 0 22" stroke="#1a1a1a" stroke-width="5" fill="none" stroke-linecap="round" />
           <path d="M 15 -20 Q 15 0 15 20" stroke="#1a1a1a" stroke-width="5" fill="none" stroke-linecap="round" />
-          <ellipse cx="-5" cy="-22" rx="18" ry="12" fill="#ffffff" opacity="0.7" transform="rotate(-25 -5 -22)" />
+          <ellipse cx="-5" cy="-22" rx="18" ry="12" fill="#ffffff" opacity="0.7" transform="translate(-5, -22) rotate($rotation) scale(1, $scaleY) translate(5, 22)" />
           <circle cx="-28" cy="-5" r="10" fill="#1a1a1a" />
         </g>
       </svg>
