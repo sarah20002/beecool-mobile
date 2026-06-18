@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/config/api_config.dart';
 import '../../widgets/custom_bottom_nav.dart';
+import '../../core/utils/notification_helper.dart';
 import 'reservation_step2.dart';
 
 class ReservationStep1 extends StatefulWidget {
@@ -17,6 +18,7 @@ class _ReservationStep1State extends State<ReservationStep1> {
   bool _isLoading = true;
   List<dynamic> _etablissements = [];
   int _selectedEstablishmentIndex = 0;
+  bool _isBlocked = false;
   
   int _peopleCount = 4;
   
@@ -97,6 +99,7 @@ class _ReservationStep1State extends State<ReservationStep1> {
           _etablissements = response.data;
           _isLoading = false;
         });
+        _checkReservationStatus();
         _updateTimeSlots();
       }
     } catch (e) {
@@ -106,6 +109,22 @@ class _ReservationStep1State extends State<ReservationStep1> {
           _isLoading = false;
         });
       }
+    }
+  }
+
+  Future<void> _checkReservationStatus() async {
+    if (_etablissements.isEmpty) return;
+    try {
+      final etabId = _etablissements[_selectedEstablishmentIndex]['id'];
+      final dio = Dio();
+      final response = await dio.get('${ApiConfig.baseUrl}/reservations/status/$etabId');
+      if (response.statusCode == 200 && mounted) {
+        setState(() {
+          _isBlocked = response.data == true;
+        });
+      }
+    } catch (e) {
+      debugPrint("Error checking reservation status: $e");
     }
   }
 
@@ -119,7 +138,21 @@ class _ReservationStep1State extends State<ReservationStep1> {
     final String? schedule = isWeekend ? etab['horaireWeekend'] : etab['horaireSemaine'];
     
     setState(() {
-      _timeSlots = _generateTimeSlots(schedule);
+      List<String> rawSlots = _generateTimeSlots(schedule);
+      
+      // Filtrer les heures passées si la date sélectionnée est aujourd'hui
+      final now = DateTime.now();
+      if (selectedDate.year == now.year && selectedDate.month == now.month && selectedDate.day == now.day) {
+        rawSlots.removeWhere((t) {
+          final parts = t.split(':');
+          final h = int.parse(parts[0]);
+          final m = int.parse(parts[1]);
+          // Garde une marge de 30 min (facultatif, ici on bloque strictement les heures passées)
+          return h < now.hour || (h == now.hour && m <= now.minute);
+        });
+      }
+
+      _timeSlots = rawSlots;
       
       if (_timeSlots.isNotEmpty) {
         // Dynamically adjust selected service if current is empty
@@ -244,11 +277,12 @@ class _ReservationStep1State extends State<ReservationStep1> {
                           child: _buildTimeGrid(),
                         ),
                         const SizedBox(height: 30),
+                        if (!_isLoading && _etablissements.isNotEmpty) _buildNextButton(),
+                        const SizedBox(height: 30),
                       ],
                     ),
                   ),
           ),
-          if (!_isLoading && _etablissements.isNotEmpty) _buildNextButton(),
         ],
       ),
       bottomNavigationBar: const CustomBottomNav(selectedIndex: 2),
@@ -375,6 +409,7 @@ class _ReservationStep1State extends State<ReservationStep1> {
         setState(() {
           _selectedEstablishmentIndex = index;
         });
+        _checkReservationStatus();
         _updateTimeSlots();
       },
       child: Container(
@@ -451,13 +486,33 @@ class _ReservationStep1State extends State<ReservationStep1> {
                   padding: const EdgeInsets.symmetric(horizontal: 18),
                   child: Text('$_peopleCount', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: Color(0xFF0F172A))),
                 ),
-                _counterBtn(Icons.add, () => setState(() => _peopleCount++), isAdd: true),
+                _counterBtn(Icons.add, _incrementPeopleCount, isAdd: true),
               ],
             ),
           ),
         ],
       ),
     );
+  }
+
+  void _incrementPeopleCount() {
+    if (_etablissements.isEmpty) return;
+    final etab = _etablissements[_selectedEstablishmentIndex];
+    // On récupère la capacité max d'une table pour cet établissement. Si null, on utilise 10 par défaut.
+    final maxCapacity = etab['capaciteMaxTable'] ?? 10; 
+    final phone = etab['telephone'] ?? 'l\'établissement';
+
+    if (_peopleCount >= maxCapacity) {
+      NotificationHelper.showWarning(
+        context,
+        title: 'Capacité Max Atteinte',
+        message: 'Pour plus de $maxCapacity personnes, veuillez réserver par téléphone au $phone.',
+      );
+    } else {
+      setState(() {
+        _peopleCount++;
+      });
+    }
   }
 
   Widget _counterBtn(IconData icon, VoidCallback onTap, {bool isAdd = false}) {
@@ -515,16 +570,16 @@ class _ReservationStep1State extends State<ReservationStep1> {
                   width: 55, height: 55,
                   margin: const EdgeInsets.only(right: 12),
                   decoration: BoxDecoration(
-                    color: isSelected ? const Color(0xFF0F172A) : Colors.transparent,
+                    color: isSelected ? const Color(0xFF132B49) : Colors.transparent,
                     borderRadius: BorderRadius.circular(15),
-                    border: Border.all(color: isSelected ? const Color(0xFF0F172A) : Colors.grey.shade100),
+                    border: Border.all(color: isSelected ? const Color(0xFF132B49) : Colors.grey.shade100),
                   ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(weekdayName, style: TextStyle(color: isSelected ? Colors.white70 : Colors.grey, fontSize: 9, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 2),
-                      Text('${date.day}', style: TextStyle(color: isSelected ? Colors.white : const Color(0xFF0F172A), fontSize: 14, fontWeight: FontWeight.bold)),
+                      Text('${date.day}', style: TextStyle(color: isSelected ? Colors.white : const Color(0xFF132B49), fontSize: 14, fontWeight: FontWeight.bold)),
                     ],
                   ),
                 ),
@@ -722,7 +777,7 @@ class _ReservationStep1State extends State<ReservationStep1> {
         ],
       ),
       child: ElevatedButton(
-        onPressed: _selectedTime.isEmpty
+        onPressed: (_selectedTime.isEmpty || _isBlocked)
             ? null
             : () {
                 final etab = _etablissements[_selectedEstablishmentIndex];
@@ -740,19 +795,21 @@ class _ReservationStep1State extends State<ReservationStep1> {
                 );
               },
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.secondary,
+          backgroundColor: _isBlocked ? Colors.red.shade400 : AppColors.secondary,
           disabledBackgroundColor: Colors.grey.shade200,
           minimumSize: const Size(double.infinity, 60),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          elevation: _selectedTime.isNotEmpty ? 5 : 0,
+          elevation: (_selectedTime.isNotEmpty && !_isBlocked) ? 5 : 0,
           shadowColor: AppColors.secondary.withOpacity(0.3),
         ),
-        child: const Row(
+        child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text('ÉTAPE SUIVANTE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-            SizedBox(width: 10),
-            Icon(Icons.arrow_forward, color: Colors.white, size: 20),
+            Text(_isBlocked ? 'RÉSERVATIONS SUSPENDUES' : 'ÉTAPE SUIVANTE', 
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(width: 10),
+            if (!_isBlocked) const Icon(Icons.arrow_forward, color: Colors.white, size: 20),
+            if (_isBlocked) const Icon(Icons.block, color: Colors.white, size: 20),
           ],
         ),
       ),

@@ -1,21 +1,26 @@
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../config/api_config.dart';
 import 'cart_service.dart';
 
 class AuthService {
   final Dio _dio = Dio(BaseOptions(
     baseUrl: ApiConfig.baseUrl,
+    connectTimeout: const Duration(seconds: 30), // ← AJOUTE
+    receiveTimeout: const Duration(seconds: 30),  // ← AJOUTE
+    sendTimeout: const Duration(seconds: 30),     // ← AJOUTE
     headers: {
       'Content-Type': 'application/json',
-      'X-Platform': 'mobile', // Très important pour le Backend !
+      'X-Platform': 'mobile',
     },
-  ));
-
+));
   // Singleton pattern
   static final AuthService _instance = AuthService._internal();
   factory AuthService() => _instance;
   AuthService._internal();
+
+  final _storage = const FlutterSecureStorage();
 
   // Connexion
   Future<Map<String, dynamic>?> login(String email, String password) async {
@@ -27,7 +32,7 @@ class AuthService {
           'motDePasse': password,
         },
       );
-
+ print('Login response: ${response.data}'); // Debug
       if (response.statusCode == 200) {
         final data = response.data;
         final String? token = data['token'];
@@ -39,8 +44,18 @@ class AuthService {
         return data;
       }
       return null;
+    } on DioException catch (e) {
+      if (e.response != null) {
+        if (e.response!.statusCode == 401) {
+          throw Exception("Identifiants incorrects. Veuillez vérifier votre email et mot de passe.");
+        }
+        if (e.response!.data is Map && e.response!.data['message'] != null) {
+          throw Exception(e.response!.data['message']);
+        }
+      }
+      throw Exception("Une erreur de réseau est survenue. Veuillez vérifier votre connexion.");
     } catch (e) {
-      rethrow;
+      throw Exception("Une erreur inattendue est survenue.");
     }
   }
 
@@ -53,7 +68,7 @@ class AuthService {
     required String telephone,
   }) async {
     try {
-      // Nettoyer le téléphone pour enlever les espaces (le backend refuse les espaces)
+      // Nettoyer le téléphone pour enlever les espaces
       final cleanPhone = telephone.replaceAll(' ', '');
 
       final response = await _dio.post(
@@ -77,24 +92,27 @@ class AuthService {
       }
       return false;
     } on DioException catch (e) {
-      if (e.response != null && e.response?.data is Map && e.response?.data['message'] != null) {
-        throw Exception(e.response!.data['message']);
+      if (e.response != null) {
+        if (e.response!.statusCode == 409) {
+          throw Exception("Un compte avec cet email existe déjà.");
+        }
+        if (e.response!.data is Map && e.response!.data['message'] != null) {
+          throw Exception(e.response!.data['message']);
+        }
       }
-      rethrow;
+      throw Exception("Erreur lors de l'inscription. Vérifiez votre connexion.");
     } catch (e) {
-      rethrow;
+      throw Exception("Une erreur inattendue est survenue.");
     }
   }
 
   // Gestion du Token
   Future<void> _saveToken(String token) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('jwt_token', token);
+    await _storage.write(key: 'jwt_token', value: token);
   }
 
   Future<void> saveToken(String token) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('jwt_token', token);
+    await _storage.write(key: 'jwt_token', value: token);
   }
 
   Future<void> _saveUserInfo(Map<String, dynamic> data) async {
@@ -109,8 +127,7 @@ class AuthService {
   }
 
   Future<String?> getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('jwt_token');
+    return await _storage.read(key: 'jwt_token');
   }
 
   // Récupérer le profil connecté
@@ -181,8 +198,31 @@ class AuthService {
   }
 
   Future<void> logout() async {
+    await _storage.delete(key: 'jwt_token');
+    
     final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
+    await prefs.remove('user_id');
+    await prefs.remove('user_email');
+    await prefs.remove('user_nom');
+    await prefs.remove('user_prenom');
+    await prefs.remove('user_telephone');
+    await prefs.remove('user_points');
+    await prefs.remove('user_image');
     await CartService().clearSession();
+  }
+
+  Future<bool> resetPassword(String email, String newPassword) async {
+    try {
+      final response = await _dio.post(
+        ApiConfig.resetPassword,
+        data: {
+          'email': email,
+          'newPassword': newPassword,
+        },
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      throw Exception("Erreur lors de la réinitialisation du mot de passe.");
+    }
   }
 }

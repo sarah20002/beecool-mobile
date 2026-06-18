@@ -6,8 +6,9 @@ import 'auth_service.dart';
 class OrderService {
   final Dio _dio = Dio(BaseOptions(
     baseUrl: ApiConfig.baseUrl,
-    connectTimeout: const Duration(seconds: 10),
-    receiveTimeout: const Duration(seconds: 10),
+    connectTimeout: const Duration(seconds: 30),
+    receiveTimeout: const Duration(seconds: 30),
+    sendTimeout: const Duration(seconds: 30),
     headers: {
       'Content-Type': 'application/json',
       'X-Platform': 'mobile',

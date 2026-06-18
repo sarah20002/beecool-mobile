@@ -165,10 +165,8 @@ class _CartScreenState extends State<CartScreen> {
           Navigator.push(
             context, 
             MaterialPageRoute(
-              builder: (context) => PaymentScreen(
-                totalAmount: (orderDataResponse['montantTotal'] as num).toDouble(),
+              builder: (context) => OrderTrackingScreen(
                 orderId: orderDataResponse['id'],
-                itemCount: (orderDataResponse['items'] as List).length,
               )
             )
           );
@@ -195,6 +193,76 @@ class _CartScreenState extends State<CartScreen> {
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
+  }
+
+  Future<void> _clearEntireCart() async {
+    // 1. Vider le panier local
+    _cartService.clear();
+
+    // 2. Annuler toutes les commandes backend (Serveur) qui sont EN_ATTENTE
+    if (_serverOrders.isNotEmpty) {
+      try {
+        final token = await AuthService().getToken();
+        final scanToken = await TableService().getSessionToken();
+        final activeToken = token ?? scanToken;
+
+        final dio = Dio(BaseOptions(
+          baseUrl: ApiConfig.baseUrl,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Platform': 'mobile',
+            if (activeToken != null) 'Authorization': 'Bearer $activeToken',
+          },
+        ));
+
+        for (var order in _serverOrders) {
+          // Check if it belongs to the current client
+          final String? cmdClientId = order['clientId']?.toString();
+          final String? cmdClientNom = order['clientNom']?.toString();
+          
+          bool isOwnOrder = false;
+          if (_currentUserId != null && _currentUserId!.isNotEmpty && cmdClientId != null) {
+            isOwnOrder = (cmdClientId == _currentUserId);
+          } else if (_currentUserName != null && _currentUserName!.isNotEmpty && cmdClientNom != null) {
+            isOwnOrder = (cmdClientNom.toLowerCase().trim() == _currentUserName!.toLowerCase().trim());
+          } else {
+            isOwnOrder = true;
+          }
+
+          if (!isOwnOrder) continue;
+
+          // Check if all items are EN_ATTENTE or ANNULE
+          bool canDelete = true;
+          for (var item in order['items']) {
+            final st = item['statut'] ?? 'EN_ATTENTE';
+            if (st != 'EN_ATTENTE' && st != 'ANNULE') {
+              canDelete = false;
+              break;
+            }
+          }
+
+          if (canDelete) {
+            await dio.delete('/commandes/${order['id']}');
+          }
+        }
+      } catch (e) {
+        debugPrint('Erreur lors de la suppression globale : $e');
+      }
+      _fetchServerOrders();
+    }
+  }
+
+  bool _canClearEntireCart() {
+    final serverItems = _getGroupedServerItems();
+    // Si un seul article côté serveur est déjà en préparation ou plus, on bloque le vidage global
+    for (var item in serverItems) {
+      final st = item['statut'] ?? 'EN_ATTENTE';
+      if (st != 'EN_ATTENTE' && st != 'ANNULE') {
+        return false;
+      }
+    }
+    // S'il n'y a rien à vider, c'est faux. Sinon c'est vrai.
+    return _cartService.items.isNotEmpty || serverItems.isNotEmpty;
   }
 
   void _showGuestNameModal(BuildContext context) {
@@ -374,6 +442,34 @@ class _CartScreenState extends State<CartScreen> {
         ),
         centerTitle: true,
         actions: [
+          if (items.isNotEmpty || _getGroupedServerItems().isNotEmpty)
+            IconButton(
+              onPressed: _canClearEntireCart() ? () {
+                showDialog(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Vider le panier'),
+                    content: const Text('Voulez-vous vraiment annuler toute votre commande en attente ?'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Annuler'),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          _clearEntireCart();
+                        },
+                        child: const Text('Vider', style: TextStyle(color: Colors.red)),
+                      ),
+                    ],
+                  ),
+                );
+              } : () {
+                NotificationHelper.showWarning(context, title: "Action impossible", message: "Certains de vos plats sont déjà en cours de préparation en cuisine.");
+              },
+              icon: Icon(Icons.delete_outline, color: _canClearEntireCart() ? Colors.redAccent : Colors.grey.shade400),
+            ),
           IconButton(
             onPressed: _fetchServerOrders,
             icon: const Icon(Icons.refresh_rounded, color: AppColors.secondary),
@@ -472,6 +568,8 @@ class _CartScreenState extends State<CartScreen> {
 
       if (isOwnOrder) {
         for (var item in order['items']) {
+          if (item['paye'] == true) continue;
+          
           final Map<String, dynamic> itemCopy = Map<String, dynamic>.from(item);
           if (itemCopy['statut'] == null) {
             itemCopy['statut'] = orderStatut;

@@ -98,7 +98,7 @@ class PaymentErrorScreen extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Text('ERREUR 3DS-114 · BANQUE ÉMETTRICE', style: TextStyle(color: Colors.redAccent, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1)),
+        const Text('ERREUR DE TRANSACTION', style: TextStyle(color: Colors.redAccent, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1)),
         const SizedBox(height: 10),
         const Text('Paiement non abouti', style: TextStyle(color: Color(0xFF0F172A), fontSize: 28, fontWeight: FontWeight.bold, fontFamily: 'Serif')),
         const SizedBox(height: 12),
@@ -106,8 +106,8 @@ class PaymentErrorScreen extends StatelessWidget {
           text: TextSpan(
             style: const TextStyle(color: Colors.grey, fontSize: 14, height: 1.5),
             children: [
-              const TextSpan(text: 'Votre banque a refusé l\'autorisation de '),
-              TextSpan(text: '${amount.toStringAsFixed(2).replaceAll('.', ',')} dh', style: const TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.bold)),
+              const TextSpan(text: 'Votre méthode de paiement a été refusée pour '),
+              TextSpan(text: '${amount.toStringAsFixed(2).replaceAll('.', ',')} DT', style: const TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.bold)),
               const TextSpan(text: '. Aucun montant n\'a été débité.'),
             ],
           ),
@@ -127,11 +127,11 @@ class PaymentErrorScreen extends StatelessWidget {
             children: [
               const Text('QUE FAIRE ?', style: TextStyle(color: Color(0xFFF8A11C), fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1)),
               const SizedBox(height: 20),
-              _buildCheckItem('1', 'Vérifier le solde', 'Le plafond peut être atteint'),
+              _buildCheckItem('1', 'Vérifier votre solde', 'Ou vos plafonds de paiement en ligne'),
               const SizedBox(height: 15),
-              _buildCheckItem('2', 'Essayer une autre carte', 'Visa, e-Dinar ou Apple Pay'),
+              _buildCheckItem('2', 'Changer de méthode', 'Essayer une autre carte ou payer sur place'),
               const SizedBox(height: 15),
-              _buildCheckItem('3', 'Contacter votre banque', 'Pour lever un blocage 3DS'),
+              _buildCheckItem('3', 'Contacter votre banque', 'Pour lever un éventuel blocage'),
             ],
           ),
         ),
@@ -144,11 +144,11 @@ class PaymentErrorScreen extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Column(
+              Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('À RÉGLER', style: TextStyle(color: Colors.white54, fontSize: 10, fontWeight: FontWeight.bold)),
-                  Text('589,09 dh', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                  const Text('À RÉGLER', style: TextStyle(color: Colors.white54, fontSize: 10, fontWeight: FontWeight.bold)),
+                  Text('${amount.toStringAsFixed(2).replaceAll('.', ',')} DT', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
                 ],
               ),
               Container(

@@ -5,6 +5,7 @@ import '../../widgets/bee_logo.dart';
 import '../../core/services/auth_service.dart';
 import 'login_screen.dart';
 import '../../core/utils/notification_helper.dart';
+import '../onboarding/onboarding_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -22,15 +23,28 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final AuthService _authService = AuthService();
 
   bool _obscurePassword = true;
-  bool _acceptTerms = true;
   bool _isLoading = false;
 
+  @override
+  void initState() {
+    super.initState();
+    _passwordController.addListener(() {
+      setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _passwordController.dispose();
+    super.dispose();
+  }
+
   Future<void> _handleRegister() async {
-    if (!_acceptTerms) {
+    if (_passwordController.text.trim().length < 8) {
       NotificationHelper.showWarning(
         context, 
-        title: "Conditions requises", 
-        message: "Veuillez accepter les conditions d'utilisation."
+        title: "Mot de passe faible", 
+        message: "Le mot de passe doit contenir au moins 8 caractères."
       );
       return;
     }
@@ -90,6 +104,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ],
             ),
           ),
+
+          // Top Actions (placed last to be clickable and not covered)
+          _buildTopActions(context),
         ],
       ),
     );
@@ -127,35 +144,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         child: SafeArea(
           child: Column(
             children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    GestureDetector(
-                      onTap: () => Navigator.pop(context),
-                      child: Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), shape: BoxShape.circle),
-                        child: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
-                      ),
-                    ),
-                    GestureDetector(
-                      onTap: () => Navigator.pop(context),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: Colors.white.withOpacity(0.3)),
-                        ),
-                        child: const Text('Se connecter', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 15),
+              const SizedBox(height: 50),
               const Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -178,14 +167,47 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
+  Widget _buildTopActions(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            GestureDetector(
+              onTap: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const OnboardingScreen())),
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), shape: BoxShape.circle),
+                child: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
+              ),
+            ),
+            GestureDetector(
+              onTap: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const LoginScreen())),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white.withOpacity(0.3)),
+                ),
+                child: const Text('Se connecter', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildFloatingRegisterForm() {
     return FadeInUp(
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 25), // DETACHED FROM SIDES
-        padding: const EdgeInsets.all(25),
+        margin: const EdgeInsets.symmetric(horizontal: 20),
+        padding: const EdgeInsets.fromLTRB(30, 40, 30, 40),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(40), // FULLY ROUNDED
+          borderRadius: BorderRadius.circular(40),
           boxShadow: [
             BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 30, offset: const Offset(0, 15)),
           ],
@@ -193,41 +215,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
         child: Column(
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _socialBtn(Icons.apple),
-                _socialBtn(Icons.g_mobiledata, color: Colors.red),
-                _socialBtn(Icons.facebook, color: Colors.blue),
-              ],
-            ),
-            const SizedBox(height: 25),
-            const Row(
-              children: [
-                Expanded(child: Divider()),
-                Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 15),
-                  child: Text('OU PAR EMAIL', style: TextStyle(color: Colors.grey, fontSize: 10, fontWeight: FontWeight.bold)),
-                ),
-                Expanded(child: Divider()),
-              ],
-            ),
-            const SizedBox(height: 25),
-            Row(
               children: [
                 Expanded(child: _buildInputField(Icons.person_outline, 'Yasmine', controller: _firstNameController)),
                 const SizedBox(width: 15),
                 Expanded(child: _buildInputField(null, 'Bennis', controller: _lastNameController)),
               ],
             ),
-            const SizedBox(height: 15),
+            const SizedBox(height: 25),
             _buildInputField(Icons.email_outlined, 'yasmine.b@gmail.com', controller: _emailController),
-            const SizedBox(height: 15),
+            const SizedBox(height: 25),
             _buildInputField(Icons.phone_outlined, '+212 6 12 34 56 78', controller: _phoneController),
-            const SizedBox(height: 15),
+            const SizedBox(height: 25),
             _buildPasswordField(),
-            const SizedBox(height: 20),
-            _buildTermsRow(),
-            const SizedBox(height: 30),
+            const SizedBox(height: 40),
             _buildActionBtn(),
           ],
         ),
@@ -235,21 +235,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  Widget _socialBtn(IconData icon, {Color color = AppColors.primary}) {
-    return Container(
-      width: 75, height: 55,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.grey.shade100),
-      ),
-      child: Icon(icon, color: color, size: 28),
-    );
-  }
-
   Widget _buildInputField(IconData? icon, String hint, {required TextEditingController controller}) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       decoration: BoxDecoration(
         color: const Color(0xFFF8F9FA),
         borderRadius: BorderRadius.circular(15),
@@ -271,7 +259,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return Column(
       children: [
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(15),
@@ -296,16 +284,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
           children: [
             _strengthBar(AppColors.secondary),
             _strengthBar(AppColors.secondary),
-            _strengthBar(Colors.green),
-            _strengthBar(Colors.grey.shade200),
+            _strengthBar(_passwordController.text.length >= 8 ? Colors.green : Colors.grey.shade200),
+            _strengthBar(_passwordController.text.length >= 8 ? Colors.green : Colors.grey.shade200),
           ],
         ),
         const SizedBox(height: 5),
-        const Row(
+        Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text('Force : solide', style: TextStyle(color: Colors.green, fontSize: 10, fontWeight: FontWeight.bold)),
-            Text('8+ caractères ✓', style: TextStyle(color: Colors.grey, fontSize: 10)),
+            Text('Force : solide', style: TextStyle(color: _passwordController.text.length >= 8 ? Colors.green : Colors.grey, fontSize: 10, fontWeight: FontWeight.bold)),
+            Text('8+ caractères ${_passwordController.text.length >= 8 ? '✓' : ''}', style: TextStyle(color: _passwordController.text.length >= 8 ? Colors.green : Colors.grey, fontSize: 10)),
           ],
         ),
       ],
@@ -315,36 +303,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Widget _strengthBar(Color color) {
     return Expanded(
       child: Container(height: 4, margin: const EdgeInsets.symmetric(horizontal: 2), decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2))),
-    );
-  }
-
-  Widget _buildTermsRow() {
-    return Row(
-      children: [
-        SizedBox(
-          width: 24, height: 24,
-          child: Checkbox(
-            value: _acceptTerms,
-            onChanged: (v) => setState(() => _acceptTerms = v!),
-            activeColor: AppColors.secondary,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-          ),
-        ),
-        const SizedBox(width: 10),
-        const Expanded(
-          child: Text.rich(
-            TextSpan(
-              text: "J'accepte les ",
-              style: TextStyle(color: Colors.grey, fontSize: 11),
-              children: [
-                TextSpan(text: 'Conditions', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
-                TextSpan(text: ' et la '),
-                TextSpan(text: 'Politique', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
-              ],
-            ),
-          ),
-        ),
-      ],
     );
   }
 
@@ -380,7 +338,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       children: [
         const Text("Déjà inscrit-e ? ", style: TextStyle(color: Colors.grey, fontSize: 13)),
         GestureDetector(
-          onTap: () => Navigator.pop(context),
+          onTap: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const LoginScreen())),
           child: const Text("Connectez-vous", style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 13, decoration: TextDecoration.underline)),
         ),
       ],

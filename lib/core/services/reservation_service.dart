@@ -23,6 +23,7 @@ class ReservationService {
     String? nomReservation,
     bool cautionPayee = true,
     String? tableId,
+    String? notes,
   }) async {
     try {
       final token = await AuthService().getToken();
@@ -39,6 +40,7 @@ class ReservationService {
           'nomReservation': nomReservation,
           'cautionPayee': cautionPayee,
           'tableId': tableId,
+          'notes': notes,
         },
         options: Options(
           headers: {

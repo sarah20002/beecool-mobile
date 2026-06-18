@@ -12,6 +12,7 @@ import '../reservation/reservation_history_screen.dart';
 import '../cart/order_history_screen.dart';
 import 'favorites_screen.dart';
 import 'reclamations_screen.dart';
+import '../../widgets/bee_logo.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -75,6 +76,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     _fetchLiveProfile();
     _fetchStats();
+  }
+
+  String _getInitials() {
+    String name = _userName.trim();
+    if (name.isEmpty || name.toLowerCase() == 'client' || name.toLowerCase() == 'yasmine bennis') {
+      if (name.toLowerCase() == 'yasmine bennis' && _userPrenom.isEmpty) {
+        // This means it's the hardcoded default and no user was loaded yet
+        return 'YB';
+      }
+      if (name.toLowerCase() == 'client') return 'CL';
+    }
+    
+    List<String> parts = name.split(RegExp(r'\s+'));
+    if (parts.length >= 2) {
+      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+    } else {
+      return name.substring(0, name.length >= 2 ? 2 : 1).toUpperCase();
+    }
   }
 
   Future<void> _fetchStats() async {
@@ -198,138 +217,132 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final double statusBarHeight = MediaQuery.of(context).padding.top;
-    final double pinThreshold = statusBarHeight + 64.0;
-    double cardTop = 250.0 - _scrollOffset;
-    if (cardTop < pinThreshold) {
-      cardTop = pinThreshold;
-    }
-
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: Stack(
+      body: Column(
         children: [
+          // ── Fixed Header and Stats Card Overlay ──
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              _buildHeader(),
+              Positioned(
+                bottom: -45, // Overlap the bottom of the header
+                left: 20,
+                right: 20,
+                child: _buildStatsCard(),
+              ),
+            ],
+          ),
+          const SizedBox(height: 65), // Space below the overlapping stats card
+
           // ── Scrollable Body ──
-          SingleChildScrollView(
-            controller: _scrollController,
-            physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.only(bottom: 100), // padding for bottom nav
-            child: Column(
-              children: [
-                // Golden-Orange Gradient Header
-                _buildHeader(),
-                
-                const SizedBox(height: 65), // spacing for stats card overlap
+          Expanded(
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.only(bottom: 100),
+              child: Column(
+                children: [
+                  _buildFidelityCard(),
+                  const SizedBox(height: 10),
 
-                _buildFidelityCard(),
-
-                const SizedBox(height: 10),
-
-                // Menu items
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Column(
-                    children: [
-                      _buildMenuItem(
-                        icon: Icons.calendar_today_rounded,
-                        iconColor: AppColors.secondary,
-                        bgColor: AppColors.secondary.withOpacity(0.12),
-                        title: 'Mes réservations',
-                        subtitle: '$_upcomingReservationsCount à venir',
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (context) => const ReservationHistoryScreen()),
-                          ).then((_) => _fetchStats());
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      _buildMenuItem(
-                        icon: Icons.shopping_bag_outlined,
-                        iconColor: Colors.blue,
-                        bgColor: Colors.blue.withOpacity(0.12),
-                        title: 'Historique de commandes',
-                        subtitle: '$_ordersCount commande${_ordersCount > 1 ? 's' : ''}',
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (context) => const OrderHistoryScreen()),
-                          ).then((_) => _fetchStats());
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      _buildMenuItem(
-                        icon: Icons.favorite_border_rounded,
-                        iconColor: Colors.brown.shade400,
-                        bgColor: Colors.brown.shade100.withOpacity(0.4),
-                        title: 'Mes favoris',
-                        subtitle: '$_favoritesCount plat${_favoritesCount > 1 ? 's' : ''}',
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (context) => const FavoritesScreen()),
-                          ).then((_) => _fetchStats());
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      _buildMenuItem(
-                        icon: Icons.support_agent_rounded,
-                        iconColor: AppColors.error,
-                        bgColor: AppColors.error.withOpacity(0.12),
-                        title: 'Mes réclamations',
-                        subtitle: 'Suivi de vos signalements',
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (context) => const ReclamationsScreen()),
-                          );
-                        },
-                      ),
-                      
-                      const SizedBox(height: 30),
-                      
-                      // Modern Pill Logout Button
-                      GestureDetector(
-                        onTap: _logout,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFFECEF), // light soft red
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.logout_rounded, color: Color(0xFFD32F2F), size: 16),
-                              SizedBox(width: 8),
-                              Text(
-                                'Se déconnecter',
-                                style: TextStyle(
-                                  color: Color(0xFFD32F2F),
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 0.2,
+                  // Menu items
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Column(
+                      children: [
+                        _buildMenuItem(
+                          icon: Icons.calendar_today_rounded,
+                          iconColor: AppColors.secondary,
+                          bgColor: AppColors.secondary.withOpacity(0.12),
+                          title: 'Mes réservations',
+                          subtitle: '$_upcomingReservationsCount à venir',
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => const ReservationHistoryScreen()),
+                            ).then((_) => _fetchStats());
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        _buildMenuItem(
+                          icon: Icons.shopping_bag_outlined,
+                          iconColor: Colors.blue,
+                          bgColor: Colors.blue.withOpacity(0.12),
+                          title: 'Historique de commandes',
+                          subtitle: '$_ordersCount commande${_ordersCount > 1 ? 's' : ''}',
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => const OrderHistoryScreen()),
+                            ).then((_) => _fetchStats());
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        _buildMenuItem(
+                          icon: Icons.favorite_border_rounded,
+                          iconColor: Colors.brown.shade400,
+                          bgColor: Colors.brown.shade100.withOpacity(0.4),
+                          title: 'Mes favoris',
+                          subtitle: '$_favoritesCount plat${_favoritesCount > 1 ? 's' : ''}',
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => const FavoritesScreen()),
+                            ).then((_) => _fetchStats());
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        _buildMenuItem(
+                          icon: Icons.support_agent_rounded,
+                          iconColor: AppColors.error,
+                          bgColor: AppColors.error.withOpacity(0.12),
+                          title: 'Mes réclamations',
+                          subtitle: 'Suivi de vos signalements',
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => const ReclamationsScreen()),
+                            );
+                          },
+                        ),
+                        
+                        const SizedBox(height: 30),
+                        
+                        // Modern Pill Logout Button
+                        GestureDetector(
+                          onTap: _logout,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFECEF), // light soft red
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.logout_rounded, color: Color(0xFFD32F2F), size: 16),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Se déconnecter',
+                                  style: TextStyle(
+                                    color: Color(0xFFD32F2F),
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 0.2,
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-
-          // ── Stats Card Overlay (overlapping header and body) ──
-          Positioned(
-            top: cardTop,
-            left: 20,
-            right: 20,
-            child: _buildStatsCard(),
-          ),
-
         ],
       ),
       bottomNavigationBar: const CustomBottomNav(selectedIndex: 3),
@@ -471,53 +484,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   alignment: Alignment.center,
                   children: [
                     Container(
-                      padding: const EdgeInsets.all(3),
-                      decoration: const BoxDecoration(
+                      padding: const EdgeInsets.all(5),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
                         shape: BoxShape.circle,
-                        gradient: LinearGradient(
-                          colors: [
-                            Color(0xFFFFD200),
-                            Color(0xFFF7971E),
-                          ],
-                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.15),
+                            blurRadius: 10,
+                            offset: const Offset(0, 5),
+                          ),
+                        ],
                       ),
-                      child: CircleAvatar(
-                        radius: 40,
-                        backgroundImage: const NetworkImage(
-                          'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150',
-                        ),
-                        backgroundColor: Colors.amber.shade200,
-                      ),
-                    ),
-                    Positioned(
-                      bottom: 0,
-                      right: 0,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFFD97706), width: 1.5),
+                        width: 80,
+                        height: 80,
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: LinearGradient(
+                            colors: [Color(0xFFFFD54F), Color(0xFFF59E0B)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
                         ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.star_rounded, color: Color(0xFFD97706), size: 10),
-                            SizedBox(width: 2),
-                            Text(
-                              'OR',
-                              style: TextStyle(
-                                color: Color(0xFFD97706),
-                                fontSize: 8,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
+                        alignment: Alignment.center,
+                        child: Text(_getInitials(), style: const TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.w900, fontSize: 36)),
                       ),
                     ),
-                  ],
-                ),
+                      ],
+                    ),
 
                 const SizedBox(height: 12),
 
@@ -634,15 +629,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                         ),
                         const SizedBox(height: 4),
-                        Text(
-                          'BeeCool Gold Club'.toUpperCase(),
-                          style: const TextStyle(
-                            color: Color(0xFFFFD200), // Gold text
-                            fontSize: 14,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
+                        const BeeTextLogo(fontSize: 16, color: Color(0xFFFFD200)),
                       ],
                     ),
                     const Icon(
@@ -685,7 +672,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                         const SizedBox(height: 2),
                         const Text(
-                          'MEMBRE PRIVILÈGE',
+                          'CLIENT FIDÈLE',
                           style: TextStyle(
                             color: Colors.white54,
                             fontSize: 8,
@@ -940,58 +927,65 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
                   child: Form(
                     key: formKey,
-                    child: SingleChildScrollView(
-                      physics: const BouncingScrollPhysics(),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          // Handle bar
-                          Center(
-                            child: Container(
-                              width: 44,
-                              height: 5,
-                              decoration: BoxDecoration(
-                                color: Colors.black.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Handle bar
+                        Center(
+                          child: Container(
+                            width: 44,
+                            height: 5,
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(10),
                             ),
                           ),
-                          const SizedBox(height: 24),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text(
-                                'Modifier le profil',
-                                style: TextStyle(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w800,
-                                  color: Color(0xFF0F172A),
-                                  letterSpacing: 0.5,
-                                ),
+                        ),
+                        const SizedBox(height: 24),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Modifier le profil',
+                              style: TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF0F172A),
+                                letterSpacing: 0.5,
                               ),
-                              GestureDetector(
-                                onTap: () => Navigator.pop(context),
-                                child: Container(
-                                  padding: const EdgeInsets.all(6),
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: Colors.black.withOpacity(0.05),
-                                  ),
-                                  child: const Icon(Icons.close_rounded, color: Color(0xFF0F172A), size: 20),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            'Mettez à jour vos informations personnelles pour personnaliser votre expérience.',
-                            style: TextStyle(
-                              color: Color(0xFF64748B),
-                              fontSize: 13,
                             ),
+                            GestureDetector(
+                              onTap: () => Navigator.pop(context),
+                              child: Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.black.withOpacity(0.05),
+                                ),
+                                child: const Icon(Icons.close_rounded, color: Color(0xFF0F172A), size: 20),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Mettez à jour vos informations personnelles pour personnaliser votre expérience.',
+                          style: TextStyle(
+                            color: Color(0xFF64748B),
+                            fontSize: 13,
                           ),
-                          const SizedBox(height: 24),
+                        ),
+                        const SizedBox(height: 24),
+                        
+                        // Scrollable content
+                        Flexible(
+                          child: SingleChildScrollView(
+                            physics: const BouncingScrollPhysics(),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+
 
                           // Avatar editing preview
                           Center(
@@ -1005,12 +999,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       colors: [Color(0xFFFFD200), Color(0xFFF7971E)],
                                     ),
                                   ),
-                                  child: CircleAvatar(
-                                    radius: 46,
-                                    backgroundImage: const NetworkImage(
-                                      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150',
+                                  child: Container(
+                                    width: 92,
+                                    height: 92,
+                                    decoration: const BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      gradient: LinearGradient(
+                                        colors: [Color(0xFFFFD54F), Color(0xFFF59E0B)],
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                      ),
                                     ),
-                                    backgroundColor: Colors.amber.shade100,
+                                    alignment: Alignment.center,
+                                    child: Text(_getInitials(), style: const TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.w900, fontSize: 36)),
                                   ),
                                 ),
                                 Positioned(
@@ -1144,7 +1145,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ],
                             ),
                           ),
-                          const SizedBox(height: 32),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
                           
                           // Save Button
                           Container(
@@ -1272,8 +1277,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                 ),
-              ),
-            );
+              );
           },
         );
       },

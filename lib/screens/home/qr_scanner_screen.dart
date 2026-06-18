@@ -8,6 +8,7 @@ import '../menu/menu_screen.dart';
 import '../../core/services/cart_service.dart';
 import '../../core/services/auth_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/utils/notification_helper.dart';
 
 class QRScannerScreen extends StatefulWidget {
   const QRScannerScreen({super.key});
@@ -16,13 +17,24 @@ class QRScannerScreen extends StatefulWidget {
   State<QRScannerScreen> createState() => _QRScannerScreenState();
 }
 
-class _QRScannerScreenState extends State<QRScannerScreen> {
+class _QRScannerScreenState extends State<QRScannerScreen> with SingleTickerProviderStateMixin {
   final TextEditingController _idController = TextEditingController();
   final MobileScannerController _scannerController = MobileScannerController();
+  late AnimationController _animationController;
   bool _isProcessing = false;
 
   @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat(reverse: true);
+  }
+
+  @override
   void dispose() {
+    _animationController.dispose();
     _idController.dispose();
     _scannerController.dispose();
     super.dispose();
@@ -43,10 +55,6 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
       _isProcessing = true;
     });
     _scannerController.stop();
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Ouverture de la table en cours...'), duration: Duration(seconds: 1)),
-    );
 
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('jwt_token');
@@ -81,6 +89,9 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
             await AuthService().saveToken(token.toString());
           }
 
+          // Security: clear the manual input field so it doesn't stay visible
+          _idController.clear();
+
           if (!isRealClient) {
             // Guest/Invite -> Link the name entered during guest mode selection to the backend table session!
             final guestName = prefs.getString('user_prenom') ?? 'Invite';
@@ -105,6 +116,14 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
             } catch (inviteErr) {
               debugPrint('Error linking scanned guest name to session: $inviteErr');
             }
+          }
+
+          if (context.mounted) {
+            NotificationHelper.showSuccess(
+              context,
+              title: 'Table Connectée !',
+              message: 'Bienvenue. Vous pouvez maintenant consulter le menu et passer commande.',
+            );
           }
 
           Navigator.pushReplacement(
@@ -132,8 +151,10 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
       }
       
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(errorMessage)),
+        NotificationHelper.showWarning(
+          context,
+          title: 'Erreur',
+          message: errorMessage,
         );
       }
     }
@@ -154,22 +175,31 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: AppColors.primary, size: 20),
-          onPressed: () => Navigator.pop(context),
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 20, top: 8, bottom: 8),
+          child: GestureDetector(
+            onTap: () => Navigator.pop(context),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF0F172A), size: 16),
+            ),
+          ),
         ),
         title: const Text(
           'Scanner',
-          style: TextStyle(color: AppColors.primary, fontFamily: 'Serif', fontSize: 20),
+          style: TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.bold, fontSize: 18),
         ),
         centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.wb_sunny_outlined, color: AppColors.primary, size: 24),
-            onPressed: () {},
-          ),
-          const SizedBox(width: 10),
-        ],
       ),
       body: Column(
         children: [
@@ -209,10 +239,11 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
                     width: 280,
                     height: 280,
                     decoration: BoxDecoration(
-                      color: Colors.black,
+                      color: const Color(0xFF1E3A8A).withOpacity(0.4), // Bleu avec transparence (Glassmorphism)
                       borderRadius: BorderRadius.circular(30),
+                      border: Border.all(color: Colors.white.withOpacity(0.2), width: 1.5),
                       boxShadow: [
-                        BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 20, offset: const Offset(0, 10))
+                        BoxShadow(color: const Color(0xFF1E3A8A).withOpacity(0.2), blurRadius: 20, offset: const Offset(0, 10))
                       ],
                     ),
                     child: ClipRRect(
@@ -231,73 +262,153 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
                       ),
                     ),
                   ),
+                  // Watermark icon in the center
+                  IgnorePointer(
+                    child: Container(
+                      width: 120,
+                      height: 120,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.85), // Slightly transparent white
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10)
+                        ],
+                      ),
+                      child: const Center(
+                        child: Icon(Icons.qr_code_2_rounded, color: Color(0xFF1E3A8A), size: 100),
+                      ),
+                    ),
+                  ),
                   _buildCorners(),
+                  // Animated Scanner Line
+                  AnimatedBuilder(
+                    animation: _animationController,
+                    builder: (context, child) {
+                      return Positioned(
+                        top: 20 + (_animationController.value * 240), // Animates up and down within the 280x280 box
+                        left: 20,
+                        right: 20,
+                        child: Container(
+                          height: 3,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                const Color(0xFFFC9910).withOpacity(0.0),
+                                const Color(0xFFFC9910),
+                                const Color(0xFFFC9910).withOpacity(0.0),
+                              ],
+                            ),
+                            boxShadow: [
+                              BoxShadow(color: const Color(0xFFFC9910).withOpacity(0.6), blurRadius: 10, spreadRadius: 2),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                 ],
               ),
             ),
           ),
           
-          const SizedBox(height: 20),
+          const SizedBox(height: 15),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 40),
             child: Text(
-              'Ou saisissez manuellement l\'identifiant de la table',
+              'Accédez à la carte, commandez et payez sans quitter votre table.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey, fontSize: 13, height: 1.4),
+              style: TextStyle(color: Color(0xFF64748B), fontSize: 13, height: 1.4, fontWeight: FontWeight.w500),
             ),
+          ),
+          
+          const SizedBox(height: 25),
+          
+          Row(
+            children: [
+              Expanded(child: Divider(color: Colors.grey.shade300, indent: 40, endIndent: 10)),
+              Text('OU', style: TextStyle(color: Colors.grey.shade500, fontSize: 12, fontWeight: FontWeight.bold)),
+              Expanded(child: Divider(color: Colors.grey.shade300, indent: 10, endIndent: 40)),
+            ],
           ),
           
           const Spacer(),
           
           // Manual Input Field
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 10, 20, 30),
-            child: Row(
+            padding: const EdgeInsets.fromLTRB(25, 10, 25, 35),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: _idController,
-                    decoration: InputDecoration(
-                      hintText: 'ID de la table',
-                      filled: true,
-                      fillColor: Colors.grey.shade50,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(15),
-                        borderSide: BorderSide(color: Colors.grey.shade200),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(15),
-                        borderSide: BorderSide(color: Colors.grey.shade200),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(15),
-                        borderSide: const BorderSide(color: AppColors.secondary),
-                      ),
-                    ),
+                const Text(
+                  'SAISIR L\'IDENTIFIANT',
+                  style: TextStyle(
+                    color: Color(0xFF0F172A),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.2,
                   ),
                 ),
-                const SizedBox(width: 10),
-                GestureDetector(
-                  onTap: () {
-                    if (_idController.text.isNotEmpty) {
-                      _processTableId(_idController.text);
-                    }
-                  },
-                  child: Container(
-                    height: 50,
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    decoration: BoxDecoration(
-                      color: AppColors.secondary,
-                      borderRadius: BorderRadius.circular(15),
-                      boxShadow: [
-                        BoxShadow(color: AppColors.secondary.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 5))
-                      ],
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.8), // Goutte d'eau effect
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.grey.withOpacity(0.2), width: 1.5),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.04),
+                              blurRadius: 15,
+                              offset: const Offset(0, 5),
+                            ),
+                          ],
+                        ),
+                        child: TextField(
+                          controller: _idController,
+                          style: const TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.w600, fontSize: 15),
+                          decoration: InputDecoration(
+                            hintText: 'Ex. TABLE-07',
+                          hintStyle: TextStyle(color: Colors.grey.shade500, fontSize: 15, fontWeight: FontWeight.w500),
+                            prefixIcon: const Icon(Icons.qr_code_2_rounded, color: Color(0xFF2563EB), size: 22), // Bleu clair/marine (pas noir)
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide.none,
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+                          ),
+                        ),
+                      ),
                     ),
-                    child: const Center(
-                      child: Icon(Icons.arrow_forward_rounded, color: Colors.white),
+                    const SizedBox(width: 15),
+                    GestureDetector(
+                      onTap: () {
+                        if (_idController.text.isNotEmpty) {
+                          _processTableId(_idController.text);
+                        }
+                      },
+                      child: Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8A11C), // Jaune/Orange lumineux comme sur l'image
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFFF8A11C).withOpacity(0.6), // Trace à l'entour (Glow)
+                              blurRadius: 18,
+                              spreadRadius: 3,
+                              offset: const Offset(0, 4),
+                            )
+                          ],
+                        ),
+                        child: const Center(
+                          child: Icon(Icons.arrow_forward_rounded, color: Color(0xFF0F172A), size: 24),
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ],
             ),

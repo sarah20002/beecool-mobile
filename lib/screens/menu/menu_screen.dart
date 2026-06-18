@@ -127,6 +127,10 @@ class _MenuScreenState extends State<MenuScreen> {
 
             _buildBanner(),
 
+            const SizedBox(height: 5),
+
+            _buildRecommended(),
+
             const SizedBox(height: 20),
 
             _buildCategories(),
@@ -158,140 +162,188 @@ class _MenuScreenState extends State<MenuScreen> {
 
 
   Widget _buildBanner() {
-
     return Stack(
-
       children: [
-
         Container(
-
-          height: 250,
-
+          height: 290,
           width: double.infinity,
-
           decoration: const BoxDecoration(
-
             image: DecorationImage(
-
               image: NetworkImage('https://images.unsplash.com/photo-1504674900247-0877df9cc836?ixlib=rb-4.0.3&auto=format&fit=crop&w=1470&q=80'),
-
               fit: BoxFit.cover,
-
             ),
-
           ),
-
           child: Container(
-
             decoration: BoxDecoration(
-
               gradient: LinearGradient(
-
                 begin: Alignment.topCenter,
-
                 end: Alignment.bottomCenter,
-
                 colors: [Colors.black.withOpacity(0.2), Colors.black.withOpacity(0.8)],
-
               ),
-
             ),
-
           ),
-
         ),
-
         Positioned(
-
-          bottom: 30,
-
+          top: MediaQuery.of(context).padding.top + 10,
           left: 20,
-
-          child: Column(
-
-            crossAxisAlignment: CrossAxisAlignment.start,
-
-            children: [
-
-              FadeInLeft(
-
-                child: const Text(
-
-                  'Notre Menu',
-
-                  style: TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.bold, fontFamily: 'Serif'),
-
-                ),
-
-              ),
-
-              const SizedBox(height: 10),
-
-              FadeInUp(
-
-                child: ClipRRect(
-
-                  borderRadius: BorderRadius.circular(20),
-
-                  child: BackdropFilter(
-
-                    filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-
-                    child: Container(
-
-                      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
-
-                      decoration: BoxDecoration(
-
-                        color: Colors.white.withOpacity(0.15),
-
-                        borderRadius: BorderRadius.circular(20),
-
-                        border: Border.all(color: Colors.white.withOpacity(0.4), width: 1),
-
-                      ),
-
-                      child: const Row(
-
-                        children: [
-
-                          Icon(Icons.qr_code_scanner, color: AppColors.secondary, size: 16),
-
-                          SizedBox(width: 8),
-
-                          Text(
-
-                            'Scannez le code sur table pour commander',
-
-                            style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w600),
-
-                          ),
-
-                        ],
-
-                      ),
-
-                    ),
-
+          child: GestureDetector(
+            onTap: () {
+              if (Navigator.canPop(context)) Navigator.pop(context);
+            },
+            child: ClipOval(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                child: Container(
+                  width: 44, height: 44,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.3),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
                   ),
-
+                  child: const Center(child: Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20)),
                 ),
-
               ),
-
-            ],
-
+            ),
           ),
-
         ),
-
+        Positioned(
+          bottom: 60,
+          left: 20,
+          child: FadeInLeft(
+            child: RichText(
+              text: const TextSpan(
+                style: TextStyle(fontSize: 36, fontWeight: FontWeight.bold, fontFamily: 'Serif'),
+                children: [
+                  TextSpan(text: 'Notre ', style: TextStyle(color: Colors.white)),
+                  TextSpan(text: 'Menu', style: TextStyle(color: Color(0xFFF8A11C), fontStyle: FontStyle.italic)),
+                ],
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          bottom: -1,
+          left: 0,
+          right: 0,
+          child: Container(
+            height: 30,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(30),
+                topRight: Radius.circular(30),
+              ),
+            ),
+          ),
+        ),
       ],
-
     );
-
   }
 
 
+
+  Widget _buildRecommended() {
+    final List<Map<String, dynamic>> mockRecommended = [
+      {
+        'id': 'mock1',
+        'nom': 'Burger Spécial',
+        'prix': '15',
+        'image': 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=400&q=80',
+      },
+      {
+        'id': 'mock2',
+        'nom': 'Pizza Margherita',
+        'prix': '18',
+        'image': 'https://images.unsplash.com/photo-1574071318508-1cdbab80d002?auto=format&fit=crop&w=400&q=80',
+      },
+      {
+        'id': 'mock3',
+        'nom': 'Salade César',
+        'prix': '12',
+        'image': 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=400&q=80',
+      },
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 20.0),
+          child: Text(
+            'Plats Recommandés',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: Colors.black87,
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 155,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 15),
+            itemCount: mockRecommended.length,
+            itemBuilder: (context, index) {
+              final item = mockRecommended[index];
+              return FadeInRight(
+                delay: Duration(milliseconds: 100 * index),
+                child: Container(
+                  width: 125,
+                  margin: const EdgeInsets.only(right: 15, bottom: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(15),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.06),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ClipRRect(
+                        borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
+                        child: Image.network(
+                          item['image'],
+                          height: 85,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item['nom'],
+                              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${item['prix']} DT',
+                              style: const TextStyle(color: AppColors.secondary, fontWeight: FontWeight.bold, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
 
   Widget _buildCategories() {
     if (_isLoading || _categories.isEmpty) return const SizedBox(height: 45);
@@ -358,6 +410,16 @@ class _MenuScreenState extends State<MenuScreen> {
       itemBuilder: (context, index) {
         final item = items[index];
         final priceStr = item['prix'] != null ? '${item['prix']} DT' : '0 DT';
+        final promoPriceStr = item['prixPromotion'] != null ? '${item['prixPromotion']} DT' : null;
+        
+        String badgeText = '';
+        if (promoPriceStr != null && item['valeurPromotion'] != null) {
+          if (item['typePromotion'] == 'POURCENTAGE') {
+            badgeText = '-${item['valeurPromotion']}%';
+          } else {
+            badgeText = '-${item['valeurPromotion']} DT';
+          }
+        }
         final imageUrl = (item['image'] != null && item['image'].toString().isNotEmpty) 
             ? item['image'] 
             : 'https://images.unsplash.com/photo-1544124499-58912cbddaad?auto=format&fit=crop&w=400&q=80';
@@ -366,15 +428,19 @@ class _MenuScreenState extends State<MenuScreen> {
           delay: Duration(milliseconds: 100 * index),
           child: GestureDetector(
             onTap: () {
+              final related = _plats.where((p) => p['categorieId'] == item['categorieId'] && p['id'] != item['id']).toList();
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => DishDetailScreen(dish: item),
+                  builder: (context) => DishDetailScreen(
+                    dish: item,
+                    relatedDishes: related,
+                  ),
                 ),
               );
             },
             child: Container(
-              margin: const EdgeInsets.only(bottom: 20),
+              margin: const EdgeInsets.only(bottom: 20, left: 10, right: 10),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -390,8 +456,24 @@ class _MenuScreenState extends State<MenuScreen> {
                     children: [
                       ClipRRect(
                         borderRadius: BorderRadius.circular(20),
-                        child: Image.network(imageUrl, width: 90, height: 90, fit: BoxFit.cover),
+                        child: Image.network(imageUrl, width: 90, height: 90, fit: BoxFit.cover, errorBuilder: (context, error, stackTrace) => Container(width: 90, height: 90, color: Colors.grey.shade200, child: const Center(child: Icon(Icons.broken_image_rounded, color: Colors.grey, size: 30)))),
                       ),
+                      if (badgeText.isNotEmpty)
+                        Positioned(
+                          top: 4,
+                          left: 4,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              badgeText,
+                              style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ),
                       Positioned(
                         top: 4,
                         right: 4,
@@ -469,11 +551,32 @@ class _MenuScreenState extends State<MenuScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(item['nom'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                        Text(
+                          item['nom'] ?? '', 
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
                         const SizedBox(height: 5),
-                        Text(item['description'] ?? '', style: TextStyle(color: Colors.grey.shade600, fontSize: 12), maxLines: 2, overflow: TextOverflow.ellipsis),
+                        SizedBox(
+                          height: 36, // Hauteur fixe pour afficher environ 2 lignes
+                          child: SingleChildScrollView(
+                            physics: const BouncingScrollPhysics(),
+                            child: Text(
+                              item['description'] ?? '', 
+                              style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                            ),
+                          ),
+                        ),
                         const SizedBox(height: 10),
-                        Text(priceStr, style: const TextStyle(color: AppColors.secondary, fontWeight: FontWeight.bold, fontSize: 15)),
+                        Row(
+                          children: [
+                            if (promoPriceStr != null)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 8.0),
+                                child: Text(priceStr, style: TextStyle(color: Colors.grey.shade400, decoration: TextDecoration.lineThrough, fontSize: 12)),
+                              ),
+                            Text(promoPriceStr ?? priceStr, style: const TextStyle(color: AppColors.secondary, fontWeight: FontWeight.bold, fontSize: 15)),
+                          ]
+                        ),
                       ],
                     ),
                   ),

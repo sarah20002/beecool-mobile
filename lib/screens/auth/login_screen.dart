@@ -18,13 +18,97 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _emailController = TextEditingController(text: 'sarra@beecool.com');
   final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _confirmPasswordController = TextEditingController();
   final AuthService _authService = AuthService();
   
   bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
   bool _rememberMe = true;
   bool _isLoading = false;
+  bool _isForgotPasswordMode = false;
 
-  Future<void> _handleLogin() async {
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedEmail();
+  }
+
+  Future<void> _loadSavedEmail() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedEmail = prefs.getString('client_remembered_email');
+    if (savedEmail != null && savedEmail.isNotEmpty) {
+      setState(() {
+        _emailController.text = savedEmail;
+        _rememberMe = true;
+      });
+    } else {
+      setState(() {
+        // Keep the default mock email for easier testing if nothing is saved
+        _emailController.text = 'sarra@beecool.com';
+        // Check the box by default so they don't forget
+        _rememberMe = true;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleResetPassword() async {
+    if (_emailController.text.isEmpty || _passwordController.text.isEmpty || _confirmPasswordController.text.isEmpty) {
+      NotificationHelper.showWarning(context, title: "Champs requis", message: "Veuillez remplir tous les champs.");
+      return;
+    }
+    if (_passwordController.text != _confirmPasswordController.text) {
+      NotificationHelper.showWarning(context, title: "Erreur", message: "Les mots de passe ne correspondent pas.");
+      return;
+    }
+    if (_passwordController.text.length < 8) {
+      NotificationHelper.showWarning(context, title: "Mot de passe faible", message: "Le mot de passe doit contenir au moins 8 caractères.");
+      return;
+    }
+
+    FocusScope.of(context).unfocus();
+    setState(() => _isLoading = true);
+
+    try {
+      final success = await _authService.resetPassword(
+        _emailController.text.trim(),
+        _passwordController.text.trim()
+      );
+      
+      if (success && mounted) {
+        setState(() {
+          _isLoading = false;
+          _isForgotPasswordMode = false;
+          _passwordController.clear();
+          _confirmPasswordController.clear();
+        });
+        NotificationHelper.showSuccess(
+          context, 
+          title: "Succès", 
+          message: "Un email a été envoyé. Mot de passe réinitialisé avec succès."
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        NotificationHelper.showError(
+          context,
+          title: "Erreur",
+          message: e.toString(),
+          onRetry: () => _handleResetPassword()
+        );
+      }
+    }
+  }
+
+Future<void> _handleLogin() async {
     if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
       NotificationHelper.showWarning(
         context, 
@@ -44,17 +128,29 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
       if (result != null && mounted) {
+        final prefs = await SharedPreferences.getInstance();
+        if (_rememberMe) {
+          await prefs.setString('client_remembered_email', _emailController.text.trim());
+        } else {
+          await prefs.remove('client_remembered_email');
+        }
+
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => const HomeScreen()),
         );
       }
     } catch (e) {
+      // ← AJOUTE CES LIGNES
+      print('❌ ERREUR LOGIN: $e');
+      print('❌ TYPE: ${e.runtimeType}');
+      
       if (mounted) {
         NotificationHelper.showError(
           context, 
           title: "Échec de connexion", 
-          message: "Identifiants incorrects ou problème réseau.",
+          // ← Affiche l'erreur réelle sur le téléphone
+          message: e.toString(),
           onRetry: () => _handleLogin()
         );
       }
@@ -76,9 +172,9 @@ class _LoginScreenState extends State<LoginScreen> {
           SingleChildScrollView(
             child: Column(
               children: [
-                const SizedBox(height: 250), // Overlap starts here
+                const SizedBox(height: 230), // Match register screen overlap
                 _buildFloatingLoginForm(),
-                const SizedBox(height: 40),
+                const SizedBox(height: 20),
               ],
             ),
           ),
@@ -89,7 +185,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Widget _buildBackgroundHeader() {
     return Container(
-      height: 320, // Reduced height
+      height: 320, // Match register screen height
       width: double.infinity,
       decoration: const BoxDecoration(
         image: DecorationImage(
@@ -162,7 +258,7 @@ class _LoginScreenState extends State<LoginScreen> {
     return FadeInUp(
       duration: const Duration(milliseconds: 600),
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 25),
+        margin: const EdgeInsets.symmetric(horizontal: 20),
         width: double.infinity,
         decoration: BoxDecoration(
           color: Colors.white,
@@ -175,55 +271,92 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ],
         ),
-        padding: const EdgeInsets.fromLTRB(25, 40, 25, 40),
+        padding: const EdgeInsets.fromLTRB(30, 40, 30, 40), // Increased vertical padding
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildInputField('EMAIL', 'sarra@beecool.com', controller: _emailController),
             const SizedBox(height: 25),
-            _buildInputField(
-              'MOT DE PASSE', 
-              '••••••••••••', 
-              controller: _passwordController,
-              isPassword: true,
-              suffixIcon: IconButton(
-                icon: Icon(_obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined, color: Colors.grey, size: 20),
-                onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+            if (!_isForgotPasswordMode) ...[
+              _buildInputField(
+                'MOT DE PASSE', 
+                '••••••••••••', 
+                controller: _passwordController,
+                isPassword: true,
+                suffixIcon: IconButton(
+                  icon: Icon(_obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined, color: Colors.grey, size: 20),
+                  onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                ),
               ),
-            ),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    SizedBox(
-                      width: 20, height: 20,
-                      child: Checkbox(
-                        value: _rememberMe,
-                        onChanged: (v) => setState(() => _rememberMe = v!),
-                        activeColor: AppColors.secondary,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+              const SizedBox(height: 10),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      SizedBox(
+                        width: 20, height: 20,
+                        child: Checkbox(
+                          value: _rememberMe,
+                          onChanged: (v) => setState(() => _rememberMe = v!),
+                          activeColor: AppColors.secondary,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    const Text('Se souvenir', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                  ],
+                      const SizedBox(width: 8),
+                      const Text('Se souvenir', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                    ],
+                  ),
+                  TextButton(
+                    onPressed: () => setState(() => _isForgotPasswordMode = true),
+                    child: const Text('Mot de passe oublié ?', style: TextStyle(color: AppColors.secondary, fontSize: 12, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 30),
+              _buildConnectButton(),
+              const SizedBox(height: 25),
+              _buildSeparator(),
+              const SizedBox(height: 20),
+              _buildGuestButton(),
+              const SizedBox(height: 20),
+              _buildRegisterLink(),
+            ] else ...[
+              _buildInputField(
+                'NOUVEAU MOT DE PASSE', 
+                '••••••••••••', 
+                controller: _passwordController,
+                isPassword: true,
+                suffixIcon: IconButton(
+                  icon: Icon(_obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined, color: Colors.grey, size: 20),
+                  onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                 ),
-                TextButton(
-                  onPressed: () {},
-                  child: const Text('Mot de passe oublié ?', style: TextStyle(color: AppColors.secondary, fontSize: 12, fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(height: 25),
+              _buildInputField(
+                'CONFIRMER MOT DE PASSE', 
+                '••••••••••••', 
+                controller: _confirmPasswordController,
+                isPassword: true,
+                suffixIcon: IconButton(
+                  icon: Icon(_obscureConfirmPassword ? Icons.visibility_outlined : Icons.visibility_off_outlined, color: Colors.grey, size: 20),
+                  onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
                 ),
-              ],
-            ),
-            const SizedBox(height: 35),
-            _buildConnectButton(),
-            const SizedBox(height: 30),
-            _buildSeparator(),
-            const SizedBox(height: 25),
-            _buildGuestButton(),
-            const SizedBox(height: 25),
-            _buildRegisterLink(),
+              ),
+              const SizedBox(height: 35),
+              _buildResetButton(),
+              const SizedBox(height: 20),
+              Center(
+                child: TextButton(
+                  onPressed: () => setState(() {
+                    _isForgotPasswordMode = false;
+                    _passwordController.clear();
+                    _confirmPasswordController.clear();
+                  }),
+                  child: const Text('Retour à la connexion', style: TextStyle(color: Colors.grey, fontSize: 13, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -231,24 +364,26 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _buildGuestButton() {
-    return Container(
-      width: double.infinity,
-      height: 55,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.secondary.withOpacity(0.5), width: 1.5),
-      ),
-      child: OutlinedButton.icon(
-        onPressed: () => _showGuestNameInputModal(context),
-        style: OutlinedButton.styleFrom(
-          side: BorderSide.none,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+    return Center(
+      child: Container(
+        height: 45,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.secondary.withOpacity(0.5), width: 1.5),
         ),
-        icon: const Icon(Icons.person_outline_rounded, color: AppColors.secondary, size: 20),
-        label: const Text(
-          "Continuer en tant qu'invité", 
-          style: TextStyle(color: AppColors.secondary, fontSize: 15, fontWeight: FontWeight.bold),
+        child: OutlinedButton.icon(
+          onPressed: () => _showGuestNameInputModal(context),
+          style: OutlinedButton.styleFrom(
+            side: BorderSide.none,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+          ),
+          icon: const Icon(Icons.person_outline_rounded, color: AppColors.secondary, size: 18),
+          label: const Text(
+            "Continuer en tant qu'invité", 
+            style: TextStyle(color: AppColors.secondary, fontSize: 13, fontWeight: FontWeight.bold),
+          ),
         ),
       ),
     );
@@ -416,9 +551,9 @@ class _LoginScreenState extends State<LoginScreen> {
           padding: const EdgeInsets.only(left: 5),
           child: Text(label, style: const TextStyle(color: Colors.grey, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 15),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 2),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(15),
@@ -461,6 +596,31 @@ class _LoginScreenState extends State<LoginScreen> {
         child: _isLoading 
           ? const CircularProgressIndicator(color: Colors.white)
           : const Text('Se connecter', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+      ),
+    );
+  }
+
+  Widget _buildResetButton() {
+    return Container(
+      width: double.infinity,
+      height: 60,
+      decoration: BoxDecoration(
+        color: AppColors.secondary,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(color: AppColors.secondary.withOpacity(0.3), blurRadius: 15, offset: const Offset(0, 8)),
+        ],
+      ),
+      child: ElevatedButton(
+        onPressed: _isLoading ? null : _handleResetPassword,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.transparent,
+          shadowColor: Colors.transparent,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        ),
+        child: _isLoading 
+          ? const CircularProgressIndicator(color: Colors.white)
+          : const Text('Confirmer', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
       ),
     );
   }

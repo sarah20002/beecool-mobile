@@ -12,7 +12,6 @@ class ReservationStep4 extends StatefulWidget {
   final String telephone;
   final String email;
   final String demandeSpeciale;
-  final bool occasionSpeciale;
   final int numeroTable;
   final String? tableId;
 
@@ -26,7 +25,6 @@ class ReservationStep4 extends StatefulWidget {
     required this.telephone,
     required this.email,
     required this.demandeSpeciale,
-    required this.occasionSpeciale,
     required this.numeroTable,
     this.tableId,
   });
@@ -77,6 +75,8 @@ class _ReservationStep4State extends State<ReservationStep4> {
       final String datePart = "${widget.date.year}-$monthStr-$dayStr";
       final String dateHeureStr = "${datePart}T${widget.heure}:00";
 
+      String finalNotes = widget.demandeSpeciale.trim();
+
       final res = await ReservationService().createReservation(
         etablissementId: widget.etablissement['id'].toString(),
         dateHeure: dateHeureStr,
@@ -84,6 +84,7 @@ class _ReservationStep4State extends State<ReservationStep4> {
         nomReservation: widget.nomReservation,
         cautionPayee: true,
         tableId: widget.tableId,
+        notes: finalNotes.isNotEmpty ? finalNotes : null,
       );
 
       if (res != null && mounted) {
@@ -202,19 +203,72 @@ class _ReservationStep4State extends State<ReservationStep4> {
         const SizedBox(height: 8),
         const Text('Aucun débit immédiat — libérée 24 h après votre venue.', style: TextStyle(color: Colors.grey, fontSize: 14)),
         const SizedBox(height: 30),
-        _buildField(label: 'Numéro de carte', controller: _cardNumberController, hint: '4128 1245 8836 4128', isCard: true),
+        
+        // --- Formulaire Stripe (Statique / Mockup) ---
+        const Text('INFORMATIONS DE CARTE', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.grey)),
+        const SizedBox(height: 10),
+        Container(
+          height: 55,
+          padding: const EdgeInsets.symmetric(horizontal: 15),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Colors.grey.shade300),
+            boxShadow: [
+              BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 2)),
+            ],
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.credit_card_rounded, color: Colors.grey.shade600, size: 22),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 5,
+                child: TextField(
+                  controller: _cardNumberController,
+                  keyboardType: TextInputType.number,
+                  style: const TextStyle(fontSize: 15, color: Color(0xFF0F172A), fontWeight: FontWeight.w600, letterSpacing: 1.5),
+                  decoration: InputDecoration(
+                    hintText: 'Numéro de carte',
+                    hintStyle: TextStyle(color: Colors.grey.shade400, letterSpacing: 0),
+                    border: InputBorder.none,
+                  ),
+                ),
+              ),
+              Container(width: 1, height: 25, color: Colors.grey.shade300),
+              const SizedBox(width: 10),
+              Expanded(
+                flex: 2,
+                child: TextField(
+                  keyboardType: TextInputType.datetime,
+                  style: const TextStyle(fontSize: 15, color: Color(0xFF0F172A), fontWeight: FontWeight.w600),
+                  decoration: InputDecoration(
+                    hintText: 'MM/AA',
+                    hintStyle: TextStyle(color: Colors.grey.shade400),
+                    border: InputBorder.none,
+                  ),
+                ),
+              ),
+              Container(width: 1, height: 25, color: Colors.grey.shade300),
+              const SizedBox(width: 10),
+              Expanded(
+                flex: 2,
+                child: TextField(
+                  keyboardType: TextInputType.number,
+                  style: const TextStyle(fontSize: 15, color: Color(0xFF0F172A), fontWeight: FontWeight.w600),
+                  decoration: InputDecoration(
+                    hintText: 'CVC',
+                    hintStyle: TextStyle(color: Colors.grey.shade400),
+                    border: InputBorder.none,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
         const SizedBox(height: 20),
         _buildField(label: 'Titulaire de la carte', controller: _holderController, hint: 'YASMINE BENNIS'),
-        const SizedBox(height: 20),
-        Row(
-          children: [
-            Expanded(child: _buildDropdown(label: 'Mois', value: _month, items: ['01','02','03','04','05','06','07','08','09','10','11','12'], onChanged: (v) => setState(() => _month = v!))),
-            const SizedBox(width: 15),
-            Expanded(child: _buildDropdown(label: 'Année', value: _year, items: ['2026','2027','2028','2029','2030'], onChanged: (v) => setState(() => _year = v!))),
-            const SizedBox(width: 15),
-            SizedBox(width: 100, child: _buildField(label: 'CVV', hint: '•••')),
-          ],
-        ),
+        
         const SizedBox(height: 30),
         _buildPaymentInfoBox(),
         const SizedBox(height: 30),
@@ -254,29 +308,7 @@ class _ReservationStep4State extends State<ReservationStep4> {
     );
   }
 
-  Widget _buildDropdown({required String label, required String value, required List<String> items, required ValueChanged<String?> onChanged}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.grey)),
-        const SizedBox(height: 10),
-        Container(
-          height: 55,
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18), border: Border.all(color: Colors.grey.shade200)),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              value: value,
-              isExpanded: true,
-              icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.grey),
-              items: items.map((e) => DropdownMenuItem(value: e, child: Text(e, style: const TextStyle(fontWeight: FontWeight.bold)))).toList(),
-              onChanged: onChanged,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+
 
   Widget _buildPaymentInfoBox() {
     final double cautionVal = _calculatedCaution;

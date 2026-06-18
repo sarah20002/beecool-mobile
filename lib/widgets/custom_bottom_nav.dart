@@ -109,11 +109,10 @@ class CustomBottomNav extends StatelessWidget {
               )
             );
           } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Veuillez scanner le QR de votre table pour voir le menu.'),
-                duration: Duration(seconds: 2),
-              ),
+            NotificationHelper.showWarning(
+              context, 
+              title: "Scan requis", 
+              message: "Veuillez scanner le QR de votre table pour voir le menu complet."
             );
           }
         } else if (index == 2) {

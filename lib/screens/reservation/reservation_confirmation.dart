@@ -181,7 +181,7 @@ class ReservationConfirmation extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(color: const Color(0xFFFDEFD9), borderRadius: BorderRadius.circular(12)),
-                    child: Text('#R-${reservation['id'] ?? 'xxxx'}', style: const TextStyle(color: Color(0xFF8B5E14), fontSize: 11, fontWeight: FontWeight.bold)),
+                    child: Text(_getReservationReference(reservation), style: const TextStyle(color: Color(0xFF8B5E14), fontSize: 11, fontWeight: FontWeight.bold)),
                   ),
                 ],
               ),
@@ -203,6 +203,25 @@ class ReservationConfirmation extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _getReservationReference(Map<String, dynamic> resa) {
+    final String idPart = resa['id'] != null ? resa['id'].toString().padLeft(4, '0') : '0829';
+    
+    String fullName = '';
+    if (resa['clientPrenom'] != null) {
+      fullName = "${resa['clientPrenom']} ${resa['clientNom'] ?? ''}".trim();
+    } else if (resa['nomReservation'] != null && resa['nomReservation'].toString().trim().isNotEmpty && resa['nomReservation'].toString() != 'null') {
+      fullName = resa['nomReservation'].toString().trim();
+    } else {
+      fullName = 'Client Inconnu';
+    }
+
+    String namePart = fullName.split(' ').where((n) => n.isNotEmpty).map((n) => n[0]).join('').toUpperCase();
+    String cleanName = namePart.length >= 2 ? namePart.substring(0, 2) : (namePart + 'B').substring(0, 2);
+    if (cleanName.length < 2) cleanName = 'CB';
+
+    return "#$cleanName-$idPart-X";
   }
 
   Widget _ticketItem(String label, String value) {
@@ -240,7 +259,7 @@ class ReservationConfirmation extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
-            flex: 2,
+            flex: 1,
             child: OutlinedButton.icon(
               onPressed: () {
                 if (kIsWeb) {
@@ -272,10 +291,13 @@ class ReservationConfirmation extends StatelessWidget {
                   Add2Calendar.addEvent2Cal(event);
                 } catch (e) {
                   debugPrint("Erreur ajout calendrier: $e");
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text("Erreur calendrier: $e"), backgroundColor: Colors.red),
+                  );
                 }
               },
               icon: const Icon(Icons.calendar_today_outlined, size: 16),
-              label: const Text('Calendrier'),
+              label: const FittedBox(fit: BoxFit.scaleDown, child: Text('Calendrier')),
               style: OutlinedButton.styleFrom(
                 foregroundColor: const Color(0xFF1A2A47),
                 side: BorderSide(color: Colors.grey.shade300),
@@ -287,7 +309,7 @@ class ReservationConfirmation extends StatelessWidget {
           ),
           const SizedBox(width: 15),
           Expanded(
-            flex: 3,
+            flex: 1, // Decreased from 3 to 1 to reduce its dominance
             child: GestureDetector(
               onTap: () => Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (context) => const HomeScreen()), (route) => false),
               child: Container(
@@ -298,13 +320,16 @@ class ReservationConfirmation extends StatelessWidget {
                   boxShadow: [BoxShadow(color: const Color(0xFFF8A11C).withOpacity(0.3), blurRadius: 15, offset: const Offset(0, 8))],
                 ),
                 child: const Center(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text('Retour accueil', style: TextStyle(color: Color(0xFF1A2A47), fontWeight: FontWeight.bold, fontSize: 14)),
-                      SizedBox(width: 8),
-                      Icon(Icons.arrow_forward, color: Color(0xFF1A2A47), size: 16),
-                    ],
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text('Accueil', style: TextStyle(color: Color(0xFF1A2A47), fontWeight: FontWeight.bold, fontSize: 13)),
+                        SizedBox(width: 6),
+                        Icon(Icons.arrow_forward, color: Color(0xFF1A2A47), size: 16),
+                      ],
+                    ),
                   ),
                 ),
               ),

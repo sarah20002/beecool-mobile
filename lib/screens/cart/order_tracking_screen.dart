@@ -8,11 +8,15 @@ import '../../widgets/custom_bottom_nav.dart';
 import '../home/home_screen.dart';
 import 'review_screen.dart';
 import 'cart_screen.dart';
+import 'payment_screen.dart';
 import 'dart:async';
 import '../../core/services/auth_service.dart';
 import '../../core/services/table_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/utils/notification_helper.dart';
+import 'package:stomp_dart_client/stomp_dart_client.dart';
+import 'package:another_flushbar/flushbar.dart';
+import 'dart:convert';
 
 class OrderTrackingScreen extends StatefulWidget {
   final String orderId;
@@ -25,25 +29,97 @@ class OrderTrackingScreen extends StatefulWidget {
 class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
   Map<String, dynamic>? _orderData;
   bool _isLoading = true;
-  Timer? _timer;
   Timer? _countdownTimer;
   int _remainingSeconds = 0;
   bool _isClient = false;
   bool _isPaidHistoryExpanded = false;
+  StompClient? _stompClient;
 
   @override
   void initState() {
     super.initState();
     _fetchOrderDetails();
-    // Rafraîchir toutes les 10 secondes
-    _timer = Timer.periodic(const Duration(seconds: 10), (timer) {
-      _fetchOrderDetails();
-    });
+    _initStompClient();
+  }
+
+  void _initStompClient() {
+    // SockJS requires the URL to start with http/https
+    String wsUrl = ApiConfig.baseUrl.replaceAll('/api', '/ws');
+    
+    _stompClient = StompClient(
+      config: StompConfig(
+        url: wsUrl,
+        useSockJS: true,
+        onConnect: _onConnect,
+        beforeConnect: () async {
+          debugPrint('Connecting to STOMP WebSocket...');
+        },
+        onWebSocketError: (dynamic error) => debugPrint('STOMP Error: $error'),
+        stompConnectHeaders: {'Authorization': 'Bearer'},
+        webSocketConnectHeaders: {'Authorization': 'Bearer'},
+      ),
+    );
+    _stompClient?.activate();
+  }
+
+  void _onConnect(StompFrame frame) {
+    debugPrint('Connected to STOMP WebSocket');
+    _stompClient?.subscribe(
+      destination: '/topic/commandes/${widget.orderId}',
+      callback: (frame) {
+        if (mounted) {
+          debugPrint('Received WebSocket update for order: ${widget.orderId}');
+          
+          if (frame.body != null) {
+            try {
+              final Map<String, dynamic> payload = jsonDecode(frame.body!);
+              if (payload['type'] == 'COMMANDE_UPDATE' && payload['data'] != null) {
+                final data = payload['data'];
+                final String? itemId = data['itemId']?.toString();
+                final String? newStatut = data['statut']?.toString();
+                final String? newStatutGlobal = data['statutGlobal']?.toString();
+                
+                if (itemId != null && newStatut != null && _orderData != null) {
+                  setState(() {
+                    List<dynamic> activeItems = _orderData!['activeItems'] ?? [];
+                    for (var item in activeItems) {
+                      if (item['id']?.toString() == itemId) {
+                        item['statut'] = newStatut;
+                        break;
+                      }
+                    }
+                    if (newStatutGlobal != null) {
+                      _orderData!['latestCmdStatus'] = newStatutGlobal;
+                      if (newStatutGlobal == 'PRET' || newStatutGlobal == 'SERVIE') {
+                        _remainingSeconds = 0;
+                        _countdownTimer?.cancel();
+                      } else if (newStatutGlobal == 'EN_PREPARATION') {
+                        if (!(_countdownTimer?.isActive ?? false)) {
+                          _startCountdown();
+                        }
+                      }
+                    }
+                  });
+                  debugPrint('Updated local item $itemId to $newStatut instantly');
+                }
+              }
+            } catch (e) {
+              debugPrint('Error parsing WebSocket payload: $e');
+            }
+          }
+
+          // Always run _fetchOrderDetails in the background to ensure perfect state sync (timers, etc.)
+          Future.delayed(const Duration(milliseconds: 300), () {
+            if (mounted) _fetchOrderDetails();
+          });
+        }
+      },
+    );
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _stompClient?.deactivate();
     _countdownTimer?.cancel();
     super.dispose();
   }
@@ -91,6 +167,9 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
         final String? sessionToken = orderData['sessionToken'];
 
         List<dynamic> allSessionItems = [];
+        String latestCmdStatus = orderData['statut'] ?? 'EN_ATTENTE';
+        // Retrieve all user tickets
+        List<Map<String, dynamic>> userTickets = [];
         
         if (sessionToken != null && sessionToken.isNotEmpty) {
           try {
@@ -112,6 +191,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
                 }
 
                 if (isOwnOrder) {
+                  userTickets.add(cmd as Map<String, dynamic>);
                   final cmdItems = cmd['items'] as List? ?? [];
                   for (var item in cmdItems) {
                     item['commandeStatut'] = cmd['statut'];
@@ -122,9 +202,11 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
             }
           } catch (sessionErr) {
             debugPrint('Error fetching session commands: $sessionErr');
+            userTickets.add(orderData);
             allSessionItems = orderData['items'] as List? ?? [];
           }
         } else {
+          userTickets.add(orderData);
           allSessionItems = orderData['items'] as List? ?? [];
         }
 
@@ -136,16 +218,76 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
         final List<dynamic> activeItems = allSessionItems.where((item) => 
           item['commandeStatut'] != 'PAYEE' && item['statut'] != 'ANNULE'
         ).toList();
+        
+        // 🟢 Déduire le statut global en se basant sur TOUS les items actifs
+        String deducedStatus = 'EN_ATTENTE';
+        
+        if (activeItems.isNotEmpty) {
+           bool hasEnPrep = activeItems.any((i) => i['statut'] == 'EN_PREPARATION');
+           bool hasEnAttente = activeItems.any((i) => i['statut'] == 'EN_ATTENTE');
+           bool hasPret = activeItems.any((i) => i['statut'] == 'PRET');
+           bool allServi = activeItems.every((i) => i['statut'] == 'SERVI');
 
-        // Calcul du temps de préparation sur les items actifs uniquement
+           if (hasEnPrep) {
+             deducedStatus = 'EN_PREPARATION';
+           } else if (hasEnAttente) {
+             deducedStatus = 'EN_ATTENTE';
+           } else if (hasPret) {
+             deducedStatus = 'PRET';
+           } else if (allServi) {
+             deducedStatus = 'SERVIE';
+           }
+        } else {
+           if (userTickets.any((cmd) => cmd['statut'] == 'PAYEE')) {
+               deducedStatus = 'PAYEE';
+           } else if (userTickets.any((cmd) => cmd['statut'] == 'SERVIE')) {
+               deducedStatus = 'SERVIE';
+           } else if (userTickets.isNotEmpty) {
+               deducedStatus = userTickets.last['statut'] ?? 'EN_ATTENTE';
+           }
+        }
+
+        // Calcul du temps de préparation basé sur le plat pertinent
         int calculatedPrepTime = 0;
-        for (var item in activeItems) {
-          if (item['statut'] == 'EN_ATTENTE' || item['statut'] == 'EN_PREPARATION') {
-            int itemTime = item['tempsPreparation'] ?? 15;
-            if (itemTime > calculatedPrepTime) {
-              calculatedPrepTime = itemTime;
-            }
-          }
+        String? activeItemIdForTimer;
+
+        if (deducedStatus == 'EN_PREPARATION' || deducedStatus == 'EN_ATTENTE') {
+           List<dynamic> targetItems = [];
+           if (deducedStatus == 'EN_PREPARATION') {
+             targetItems = activeItems.where((i) => i['statut'] == 'EN_PREPARATION').toList();
+           } else {
+             targetItems = activeItems.where((i) => i['statut'] == 'EN_ATTENTE').toList();
+           }
+           
+           if (targetItems.isNotEmpty) {
+             final lastTarget = targetItems.last;
+             calculatedPrepTime = lastTarget['tempsPreparation'] ?? 15;
+             activeItemIdForTimer = lastTarget['id']?.toString();
+           } else {
+             calculatedPrepTime = 15;
+           }
+        }
+
+        // Récupérer le temps écoulé réel depuis le stockage local (SharedPreferences)
+        int currentRemainingSeconds = calculatedPrepTime * 60;
+        if (activeItemIdForTimer != null) {
+           final prefs = await SharedPreferences.getInstance();
+           final key = 'item_${activeItemIdForTimer}_prep_started_at';
+           
+           if (deducedStatus == 'EN_PREPARATION') {
+             String? storedTime = prefs.getString(key);
+             if (storedTime != null) {
+                DateTime startTime = DateTime.parse(storedTime);
+                int elapsedSeconds = DateTime.now().difference(startTime).inSeconds;
+                currentRemainingSeconds = (calculatedPrepTime * 60) - elapsedSeconds;
+                if (currentRemainingSeconds < 0) currentRemainingSeconds = 0;
+             } else {
+                // Premier passage en préparation pour ce plat spécifique
+                await prefs.setString(key, DateTime.now().toIso8601String());
+             }
+           } else if (deducedStatus == 'EN_ATTENTE') {
+             await prefs.remove(key);
+           }
         }
 
         setState(() {
@@ -154,14 +296,23 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
           _orderData!['items'] = allSessionItems;
           _orderData!['activeItems'] = activeItems;
           _orderData!['paidItems'] = paidItems;
+          _orderData!['latestCmdStatus'] = deducedStatus;
           _isLoading = false;
           
-          if (calculatedPrepTime == 0) {
+          if (calculatedPrepTime == 0 || deducedStatus == 'SERVIE' || deducedStatus == 'PAYEE') {
             _remainingSeconds = 0;
             _countdownTimer?.cancel();
-          } else if (_remainingSeconds == 0 || (calculatedPrepTime * 60 > _remainingSeconds)) {
+          } else if (deducedStatus == 'EN_ATTENTE') {
             _remainingSeconds = calculatedPrepTime * 60;
-            _startCountdown();
+            _countdownTimer?.cancel();
+          } else if (deducedStatus == 'PRET') {
+            _remainingSeconds = 0;
+            _countdownTimer?.cancel();
+          } else if (deducedStatus == 'EN_PREPARATION') {
+            _remainingSeconds = currentRemainingSeconds;
+            if (!(_countdownTimer?.isActive ?? false)) {
+              _startCountdown();
+            }
           }
         });
       }
@@ -186,25 +337,9 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
     if (activeItems.isEmpty && paidItems.isNotEmpty) {
       status = 'PAYEE';
       allItemsServi = true;
-    } else if (activeItems.isNotEmpty) {
-      bool anyItemStarted = activeItems.any((item) => 
-        item['statut'] == 'EN_PREPARATION' || 
-        item['statut'] == 'PRET' || 
-        item['statut'] == 'SERVI'
-      );
-      allItemsServi = activeItems.every((item) => 
-        item['statut'] == 'SERVI' || item['statut'] == 'ANNULE'
-      );
-      
-      if (allItemsServi) {
-        status = 'SERVIE';
-      } else if (anyItemStarted) {
-        status = 'EN_PREPARATION';
-      } else {
-        status = 'EN_ATTENTE';
-      }
     } else {
-      status = _orderData?['statut'] ?? 'EN_ATTENTE';
+      status = _orderData?['latestCmdStatus'] ?? _orderData?['statut'] ?? 'EN_ATTENTE';
+      allItemsServi = (status == 'SERVIE' || status == 'PAYEE');
     }
 
     final shortId = widget.orderId.split('-').first.toUpperCase();
@@ -239,6 +374,8 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
                 _buildTimelineSection(status, dateStr),
                 const SizedBox(height: 35),
                 _buildOrderDetailsSection(activeItems, paidItems),
+                const SizedBox(height: 30),
+                if (status != 'PAYEE') _buildPayButton(status),
                 const SizedBox(height: 120), // BottomNav spacing
               ],
             ),
@@ -298,6 +435,69 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
     );
   }
 
+  Widget _buildPayButton(String status) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Container(
+        width: double.infinity,
+        height: 60,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(color: const Color(0xFF0F172A).withOpacity(0.3), blurRadius: 15, offset: const Offset(0, 5))
+          ],
+        ),
+        child: ElevatedButton(
+          onPressed: () {
+            if (status != 'SERVIE') {
+              Flushbar(
+                message: 'Vous pourrez régler votre addition dès que vos plats seront servis à table.',
+                icon: const Icon(Icons.info_outline, size: 28.0, color: Colors.white),
+                margin: const EdgeInsets.all(8),
+                borderRadius: BorderRadius.circular(8),
+                backgroundColor: const Color(0xFFF8A11C),
+                duration: const Duration(seconds: 3),
+              ).show(context);
+            } else {
+              double payableAmount = 0.0;
+              final List<dynamic> activeItems = _orderData?['activeItems'] ?? [];
+              for (var item in activeItems) {
+                if (item['statut'] == 'SERVI' && item['paye'] != true) {
+                  double price = (item['prixUnitaire'] as num).toDouble();
+                  int qty = (item['quantite'] as num).toInt();
+                  payableAmount += (price * qty);
+                }
+              }
+
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => PaymentScreen(
+                    totalAmount: payableAmount > 0 ? payableAmount : (_orderData?['montantTotal'] ?? 0).toDouble(),
+                    orderId: widget.orderId,
+                    itemCount: activeItems.where((i) => i['statut'] == 'SERVI' && i['paye'] != true).length,
+                  ),
+                ),
+              );
+            }
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF0F172A),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          ),
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.payment_rounded, color: Colors.white, size: 22),
+              SizedBox(width: 12),
+              Text('Régler l\'addition', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildHeaderImage(String id, String time) {
     return Container(
       height: 300,
@@ -353,27 +553,51 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
   Widget _buildCurrentStatusCard(String status, int remainingSeconds) {
     String label = 'En attente';
     double progress = 0.2;
-    String desc = 'Votre commande a été envoyée en cuisine.';
+    String desc = 'État global : votre commande est en attente de validation en cuisine.';
     
     if (status == 'EN_PREPARATION') {
       label = 'En préparation';
       progress = 0.5;
-      desc = 'Le Chef prépare vos mets avec soin...';
+      desc = 'État global : au moins un de vos plats est en cours de préparation.';
+    } else if (status == 'PRET') {
+      label = 'Prêt';
+      progress = 0.8;
+      desc = 'État global : vos plats sont prêts et seront servis très bientôt !';
     } else if (status == 'SERVIE') {
       label = 'Servie';
       progress = 1.0;
-      desc = 'Bon appétit ! Vos plats sont sur table.';
+      desc = 'État global : tous les plats de votre commande ont été servis.';
     } else if (status == 'PAYEE') {
       label = 'Payée';
       progress = 1.0;
-      desc = 'Table en règle. Merci et à bientôt chez BeeCool !';
+      desc = 'État global : commande réglée. Merci et à bientôt chez BeeCool !';
     }
 
-    String countdownStr = status == 'PAYEE' ? 'Réglé' : 'Prêt';
-    if (remainingSeconds > 0 && status != 'PAYEE') {
-      int minutes = remainingSeconds ~/ 60;
-      int seconds = remainingSeconds % 60;
-      countdownStr = '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    String countdownStr = '--:--';
+    bool showPulsingDot = false;
+
+    if (status == 'PAYEE') {
+      countdownStr = 'Réglé';
+    } else if (status == 'SERVIE') {
+      countdownStr = 'Servi';
+    } else if (status == 'PRET') {
+      countdownStr = 'Prêt';
+    } else if (status == 'EN_ATTENTE') {
+      if (remainingSeconds > 0) {
+        int minutes = remainingSeconds ~/ 60;
+        countdownStr = '~ $minutes min';
+      } else {
+        countdownStr = '--:--';
+      }
+    } else if (status == 'EN_PREPARATION') {
+      if (remainingSeconds > 0) {
+        int minutes = remainingSeconds ~/ 60;
+        int seconds = remainingSeconds % 60;
+        countdownStr = '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+        showPulsingDot = true;
+      } else {
+        countdownStr = '00:00';
+      }
     }
 
     return Container(
@@ -401,7 +625,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (remainingSeconds > 0) ...[
+                  if (showPulsingDot) ...[
                     _buildPulsingDot(),
                     const SizedBox(width: 8),
                   ],
@@ -500,9 +724,11 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
 
   Widget _buildTimelineSection(String status, String time) {
     bool enAttenteDone = true;
-    bool enPrepDone = status == 'SERVIE' || status == 'PAYEE';
+    bool enPrepDone = status == 'PRET' || status == 'SERVIE' || status == 'PAYEE';
     bool enPrepActive = status == 'EN_PREPARATION';
+    bool pretActive = status == 'PRET';
     bool servieActive = status == 'SERVIE';
+    bool servieDone = status == 'SERVIE' || status == 'PAYEE';
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 25),
@@ -513,7 +739,8 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
           const SizedBox(height: 25),
           _buildTimelineItem(icon: Icons.check, title: 'Validée', subtitle: 'Reçue à $time', isDone: enAttenteDone),
           _buildTimelineItem(icon: Icons.restaurant_rounded, title: 'En préparation', subtitle: enPrepDone ? 'Cuisine terminée' : (enPrepActive ? 'En cours de cuisson' : 'À venir'), isDone: enPrepDone, isActive: enPrepActive),
-          _buildTimelineItem(icon: Icons.flatware_rounded, title: 'Servi', subtitle: servieActive ? 'Plat sur table' : 'À venir', isActive: servieActive, isNext: !servieActive && !enPrepDone),
+          _buildTimelineItem(icon: Icons.room_service_rounded, title: 'Prêt à servir', subtitle: pretActive ? 'En attente du serveur' : (servieDone ? 'Servi' : 'À venir'), isDone: servieDone, isActive: pretActive),
+          _buildTimelineItem(icon: Icons.flatware_rounded, title: 'Servi', subtitle: servieActive ? 'Plat sur table' : (status == 'PAYEE' ? 'Terminé' : 'À venir'), isDone: status == 'PAYEE', isActive: servieActive),
           _buildTimelineItem(icon: Icons.credit_card_rounded, title: 'Payé', subtitle: status == 'PAYEE' ? 'Facture réglée' : 'À régler en fin de repas', isLast: true, isDone: status == 'PAYEE'),
         ],
       ),

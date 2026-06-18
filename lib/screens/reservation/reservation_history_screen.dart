@@ -19,6 +19,7 @@ class _ReservationHistoryScreenState extends State<ReservationHistoryScreen> {
   List<dynamic> _reservations = [];
   Map<String, dynamic> _etablissementMap = {};
   bool _isLoading = true;
+  DateTime? _selectedSearchDate;
 
   @override
   void initState() {
@@ -122,16 +123,35 @@ class _ReservationHistoryScreenState extends State<ReservationHistoryScreen> {
         'montantCaution': res['montantCaution'],
         'cautionPayee': res['cautionPayee'],
         'dateHeureStr': dateHeureStr,
+        'clientPrenom': res['clientPrenom'],
+        'clientNom': res['clientNom'],
+        'nomReservation': res['nomReservation'],
       };
     }).toList();
 
+    List<Map<String, dynamic>> filteredList = mapped;
+    if (_selectedSearchDate != null) {
+      filteredList = mapped.where((res) {
+        final dateStr = res['dateHeureStr'] as String;
+        if (dateStr.isEmpty) return false;
+        try {
+          final dt = DateTime.parse(dateStr);
+          return dt.year == _selectedSearchDate!.year &&
+                 dt.month == _selectedSearchDate!.month &&
+                 dt.day == _selectedSearchDate!.day;
+        } catch (_) {
+          return false;
+        }
+      }).toList();
+    }
+
     switch (_selectedFilter) {
       case ReservationFilter.toutes:
-        return mapped;
+        return filteredList;
       case ReservationFilter.avenir:
-        return mapped.where((res) => res['status'] == 'À VENIR' || res['status'] == 'EN ATTENTE').toList();
+        return filteredList.where((res) => res['status'] == 'À VENIR' || res['status'] == 'EN ATTENTE').toList();
       case ReservationFilter.passees:
-        return mapped.where((res) => res['status'] == 'PASSÉE' || res['status'] == 'ANNULÉE').toList();
+        return filteredList.where((res) => res['status'] == 'PASSÉE' || res['status'] == 'ANNULÉE').toList();
     }
   }
 
@@ -162,12 +182,22 @@ class _ReservationHistoryScreenState extends State<ReservationHistoryScreen> {
         statusLabel = 'À VENIR';
       }
 
-      return {'status': statusLabel};
+      return {'status': statusLabel, 'dt': dt};
     }).toList();
 
-    if (filter == ReservationFilter.toutes) return mapped.length;
-    if (filter == ReservationFilter.avenir) return mapped.where((res) => res['status'] == 'À VENIR' || res['status'] == 'EN ATTENTE').length;
-    return mapped.where((res) => res['status'] == 'PASSÉE' || res['status'] == 'ANNULÉE').length;
+    List<Map<String, dynamic>> filteredList = mapped;
+    if (_selectedSearchDate != null) {
+      filteredList = mapped.where((res) {
+        final dt = res['dt'] as DateTime;
+        return dt.year == _selectedSearchDate!.year &&
+               dt.month == _selectedSearchDate!.month &&
+               dt.day == _selectedSearchDate!.day;
+      }).toList();
+    }
+
+    if (filter == ReservationFilter.toutes) return filteredList.length;
+    if (filter == ReservationFilter.avenir) return filteredList.where((res) => res['status'] == 'À VENIR' || res['status'] == 'EN ATTENTE').length;
+    return filteredList.where((res) => res['status'] == 'PASSÉE' || res['status'] == 'ANNULÉE').length;
   }
 
   int get _firstReservationYear {
@@ -362,15 +392,81 @@ class _ReservationHistoryScreenState extends State<ReservationHistoryScreen> {
                       ),
                     ),
 
-                    // Search Button
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white.withOpacity(0.15),
-                        border: Border.all(color: Colors.white.withOpacity(0.25), width: 1),
+                    // Search Button (Date Filter)
+                    GestureDetector(
+                      onTap: () async {
+                        if (_selectedSearchDate != null) {
+                          setState(() => _selectedSearchDate = null);
+                        } else {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: DateTime.now(),
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime(2030),
+                            helpText: 'SÉLECTIONNER UNE DATE',
+                            cancelText: 'ANNULER',
+                            confirmText: 'CONFIRMER',
+                            fieldLabelText: 'Date de réservation',
+                            fieldHintText: 'Jour/Mois/Année',
+                            errorFormatText: 'Format invalide.',
+                            errorInvalidText: 'Date hors limites.',
+                            builder: (context, child) {
+                              return Theme(
+                                data: Theme.of(context).copyWith(
+                                  colorScheme: const ColorScheme.light(
+                                    primary: Color(0xFFFC9910),
+                                    onPrimary: Colors.white,
+                                    onSurface: Color(0xFF132B49),
+                                  ),
+                                  dialogBackgroundColor: Colors.white,
+                                  textButtonTheme: TextButtonThemeData(
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: const Color(0xFFFC9910),
+                                      textStyle: const TextStyle(fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                  datePickerTheme: DatePickerThemeData(
+                                    backgroundColor: Colors.white,
+                                    headerBackgroundColor: const Color(0xFFFC9910),
+                                    headerForegroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(28),
+                                    ),
+                                    headerHelpStyle: const TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 1.2,
+                                    ),
+                                    headerHeadlineStyle: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 32,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                                child: child!,
+                              );
+                            },
+                          );
+                          if (picked != null) {
+                            setState(() => _selectedSearchDate = picked);
+                          }
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: _selectedSearchDate != null ? Colors.white.withOpacity(0.3) : Colors.white.withOpacity(0.15),
+                          border: Border.all(color: Colors.white.withOpacity(0.25), width: 1),
+                        ),
+                        child: Icon(
+                          _selectedSearchDate != null ? Icons.close_rounded : Icons.calendar_month_rounded, 
+                          color: Colors.white, 
+                          size: 16
+                        ),
                       ),
-                      child: const Icon(Icons.search_rounded, color: Colors.white, size: 16),
                     ),
                   ],
                 ),
@@ -566,12 +662,9 @@ class _ReservationHistoryScreenState extends State<ReservationHistoryScreen> {
                       width: 75,
                       height: 75,
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Colors.grey.shade300, Colors.grey.shade400],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
+                        color: Colors.grey.shade300,
                       ),
+                      child: const Center(child: Icon(Icons.broken_image_rounded, color: Colors.grey, size: 24)),
                     ),
                   ),
                   Container(
@@ -787,6 +880,8 @@ class _ReservationHistoryScreenState extends State<ReservationHistoryScreen> {
               Divider(color: Colors.grey.shade100, height: 1),
               const SizedBox(height: 20),
 
+              _buildDetailRow(Icons.tag_rounded, "Référence", _getReservationReference(res)),
+              const SizedBox(height: 14),
               _buildDetailRow(Icons.calendar_today_rounded, "Date & Heure", res['time']),
               const SizedBox(height: 14),
               _buildDetailRow(Icons.people_alt_rounded, "Invités & Table", res['details']),
@@ -976,6 +1071,25 @@ class _ReservationHistoryScreenState extends State<ReservationHistoryScreen> {
         ],
       ),
     );
+  }
+
+  String _getReservationReference(Map<String, dynamic> resa) {
+    final String idPart = resa['rawId'] != null ? resa['rawId'].toString().padLeft(4, '0') : '0829';
+    
+    String fullName = '';
+    if (resa['clientPrenom'] != null) {
+      fullName = "${resa['clientPrenom']} ${resa['clientNom'] ?? ''}".trim();
+    } else if (resa['nomReservation'] != null && resa['nomReservation'].toString().trim().isNotEmpty && resa['nomReservation'].toString() != 'null') {
+      fullName = resa['nomReservation'].toString().trim();
+    } else {
+      fullName = 'Client Inconnu';
+    }
+
+    String namePart = fullName.split(' ').where((n) => n.isNotEmpty).map((n) => n[0]).join('').toUpperCase();
+    String cleanName = namePart.length >= 2 ? namePart.substring(0, 2) : (namePart + 'B').substring(0, 2);
+    if (cleanName.length < 2) cleanName = 'CB';
+
+    return "#$cleanName-$idPart-X";
   }
 }
 

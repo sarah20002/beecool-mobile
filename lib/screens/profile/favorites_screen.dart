@@ -309,14 +309,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                       ),
                     ),
 
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white.withOpacity(0.12),
-                      ),
-                      child: const Icon(Icons.tune_rounded, color: Colors.white, size: 16),
-                    ),
+                    const SizedBox(width: 32), // Espace invisible pour équilibrer le titre
                   ],
                 ),
 
@@ -393,8 +386,9 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
               }
             },
             child: Container(
+              width: (MediaQuery.of(context).size.width - 40 - 16) / 3,
               margin: const EdgeInsets.only(right: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
               decoration: BoxDecoration(
                 color: isSelected ? const Color(0xFFFC9910) : Colors.white.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(20),
@@ -411,6 +405,8 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                   fontSize: 11,
                   fontWeight: isSelected ? FontWeight.w900 : FontWeight.bold,
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           );
@@ -558,6 +554,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                           fit: BoxFit.cover,
                           errorBuilder: (context, error, stackTrace) => Container(
                             color: Colors.grey.shade200,
+                            child: const Center(child: Icon(Icons.broken_image_rounded, color: Colors.grey, size: 30)),
                           ),
                         ),
                       ),

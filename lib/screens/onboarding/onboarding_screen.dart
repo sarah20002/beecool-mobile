@@ -42,18 +42,23 @@ class OnboardingScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Logo en haut
-                  Center(
-                    child: FadeInDown(
-                      child: const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          BeeIllustration(height: 35),
-                          SizedBox(width: 10),
-                          BeeTextLogo(fontSize: 20, color: Colors.white),
-                        ],
+                  // Logo et flèche en haut
+                  Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Center(
+                        child: FadeInDown(
+                          child: const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              BeeIllustration(height: 35),
+                              SizedBox(width: 10),
+                              BeeTextLogo(fontSize: 20, color: Colors.white),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
+                    ],
                   ),
                   
                   const Spacer(),
@@ -114,32 +119,20 @@ class OnboardingScreen extends StatelessWidget {
                             },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.secondary,
-                              padding: const EdgeInsets.symmetric(vertical: 20),
+                              padding: const EdgeInsets.symmetric(vertical: 15), // Reduced padding
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(30),
+                                borderRadius: BorderRadius.circular(25), // Adjusted border radius for smaller button
                               ),
                             ),
                             child: const Text(
                               'Commencer',
                               style: TextStyle(
-                                fontSize: 18,
+                                fontSize: 16, // Reduced font size
                                 fontWeight: FontWeight.bold,
                                 color: Colors.white,
                               ),
                             ),
                           ),
-                        ),
-                      ),
-                      const SizedBox(width: 15),
-                      FadeInUp(
-                        delay: const Duration(milliseconds: 800),
-                        child: Container(
-                          padding: const EdgeInsets.all(18),
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.white24),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(Icons.arrow_forward, color: Colors.white),
                         ),
                       ),
                     ],

@@ -26,7 +26,6 @@ class _ReservationStep2State extends State<ReservationStep2> {
   bool _isCheckingAuth = true;
   bool _isAuthenticated = false;
   bool _isLoginModeForGuest = false; // toggle for guest signup vs login
-  bool _isSpecialOccasion = false;
   bool _isSubmitting = false;
 
   final TextEditingController _prenomController = TextEditingController();
@@ -162,7 +161,6 @@ class _ReservationStep2State extends State<ReservationStep2> {
           telephone: '+216${_phoneController.text.trim().replaceAll(' ', '')}',
           email: _emailController.text.trim(),
           demandeSpeciale: _demandeSpecialeController.text.trim(),
-          occasionSpeciale: _isSpecialOccasion,
         ),
       ),
     );
@@ -205,8 +203,10 @@ class _ReservationStep2State extends State<ReservationStep2> {
                 : SingleChildScrollView(
                     physics: const BouncingScrollPhysics(),
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 25),
-                    child: Container(
-                      padding: const EdgeInsets.all(25),
+                    child: Column(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(25),
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(30),
@@ -256,14 +256,16 @@ class _ReservationStep2State extends State<ReservationStep2> {
                           _sectionHeader('DEMANDE SPÉCIALE'),
                           const SizedBox(height: 15),
                           _buildTextField('', 'Ex: possibilité d\'avoir une table près de la fenêtre ?', _demandeSpecialeController, maxLines: 3),
-                          const SizedBox(height: 30),
-                          _buildSpecialOccasionSwitch(),
                         ],
                       ),
                     ),
-                  ),
-          ),
-          if (!_isCheckingAuth) _buildNextButton(),
+                    const SizedBox(height: 20),
+                    if (!_isCheckingAuth) _buildNextButton(),
+                    const SizedBox(height: 30),
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -438,6 +440,7 @@ class _ReservationStep2State extends State<ReservationStep2> {
           child: TextField(
             controller: controller,
             maxLines: maxLines,
+            minLines: maxLines > 1 ? 1 : null,
             obscureText: obscureText,
             keyboardType: keyboardType,
             enabled: enabled,
@@ -499,44 +502,6 @@ class _ReservationStep2State extends State<ReservationStep2> {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildSpecialOccasionSwitch() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(30),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 20, offset: const Offset(0, 10)),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: const BoxDecoration(color: Color(0xFFFDEFD9), shape: BoxShape.circle),
-            child: const Icon(Icons.auto_awesome_rounded, color: AppColors.secondary, size: 22),
-          ),
-          const SizedBox(width: 15),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Occasion spéciale', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary, fontSize: 16, fontFamily: 'Serif')),
-                Text('Anniversaire · Chef informé', style: TextStyle(color: Colors.grey, fontSize: 11)),
-              ],
-            ),
-          ),
-          Switch(
-            value: _isSpecialOccasion,
-            onChanged: (v) => setState(() => _isSpecialOccasion = v),
-            activeColor: AppColors.secondary,
-            activeTrackColor: AppColors.secondary.withOpacity(0.3),
-          ),
-        ],
-      ),
     );
   }
 

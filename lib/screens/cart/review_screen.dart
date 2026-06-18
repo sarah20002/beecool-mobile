@@ -182,8 +182,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
                       _buildStarRating(),
                       const SizedBox(height: 35),
                       _buildFeedbackField(),
-                      const SizedBox(height: 25),
-                      _buildTagsSection(),
                       const SizedBox(height: 35),
                       _buildSubmitButton(),
                     ],
@@ -278,11 +276,11 @@ class _ReviewScreenState extends State<ReviewScreen> {
         return GestureDetector(
           onTap: () => setState(() => _rating = index + 1),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 5),
+            padding: const EdgeInsets.symmetric(horizontal: 2),
             child: Icon(
               isFilled ? Icons.star_rounded : Icons.star_outline_rounded,
               color: isFilled ? const Color(0xFFF8A11C) : Colors.grey.shade200,
-              size: 45,
+              size: 40,
             ),
           ),
         );
