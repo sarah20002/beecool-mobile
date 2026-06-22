@@ -204,10 +204,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return FadeInUp(
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 20),
-        padding: const EdgeInsets.fromLTRB(30, 40, 30, 40),
+        padding: const EdgeInsets.fromLTRB(25, 30, 25, 30),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(40),
+          borderRadius: BorderRadius.circular(30),
           boxShadow: [
             BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 30, offset: const Offset(0, 15)),
           ],
@@ -217,17 +217,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
             Row(
               children: [
                 Expanded(child: _buildInputField(Icons.person_outline, 'Yasmine', controller: _firstNameController)),
-                const SizedBox(width: 15),
+                const SizedBox(width: 12),
                 Expanded(child: _buildInputField(null, 'Bennis', controller: _lastNameController)),
               ],
             ),
-            const SizedBox(height: 25),
+            const SizedBox(height: 16),
             _buildInputField(Icons.email_outlined, 'yasmine.b@gmail.com', controller: _emailController),
-            const SizedBox(height: 25),
+            const SizedBox(height: 16),
             _buildInputField(Icons.phone_outlined, '+212 6 12 34 56 78', controller: _phoneController),
-            const SizedBox(height: 25),
+            const SizedBox(height: 16),
             _buildPasswordField(),
-            const SizedBox(height: 40),
+            const SizedBox(height: 30),
             _buildActionBtn(),
           ],
         ),
@@ -237,10 +237,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   Widget _buildInputField(IconData? icon, String hint, {required TextEditingController controller}) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
       decoration: BoxDecoration(
         color: const Color(0xFFF8F9FA),
-        borderRadius: BorderRadius.circular(15),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: TextField(
         controller: controller,
@@ -250,6 +250,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           hintText: hint,
           hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
           border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(vertical: 8),
         ),
       ),
     );
@@ -259,10 +260,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return Column(
       children: [
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(15),
+            borderRadius: BorderRadius.circular(12),
             border: Border.all(color: AppColors.secondary.withOpacity(0.5), width: 1.5),
           ),
           child: TextField(
@@ -272,6 +273,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               icon: const Icon(Icons.lock_outline, color: AppColors.secondary, size: 18),
               hintText: '••••••••••••',
               border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(vertical: 8),
               suffixIcon: IconButton(
                 icon: Icon(_obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined, color: Colors.grey, size: 18),
                 onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
@@ -336,10 +338,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        const Text("Déjà inscrit-e ? ", style: TextStyle(color: Colors.grey, fontSize: 13)),
+        const Text("Déjà inscrit-e ? ", style: TextStyle(color: Colors.grey, fontSize: 12)),
         GestureDetector(
           onTap: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const LoginScreen())),
-          child: const Text("Connectez-vous", style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 13, decoration: TextDecoration.underline)),
+          child: const Text("Connectez-vous", style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 12, decoration: TextDecoration.underline)),
         ),
       ],
     );

@@ -172,7 +172,7 @@ Future<void> _handleLogin() async {
           SingleChildScrollView(
             child: Column(
               children: [
-                const SizedBox(height: 230), // Match register screen overlap
+                const SizedBox(height: 245), // Pushed further down to minimize bottom empty space
                 _buildFloatingLoginForm(),
                 const SizedBox(height: 20),
               ],
@@ -258,11 +258,11 @@ Future<void> _handleLogin() async {
     return FadeInUp(
       duration: const Duration(milliseconds: 600),
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 20),
+        margin: const EdgeInsets.symmetric(horizontal: 20), // Restored original width
         width: double.infinity,
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(40),
+          borderRadius: BorderRadius.circular(30),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.08),
@@ -271,18 +271,23 @@ Future<void> _handleLogin() async {
             ),
           ],
         ),
-        padding: const EdgeInsets.fromLTRB(30, 40, 30, 40), // Increased vertical padding
+        padding: const EdgeInsets.fromLTRB(25, 32, 25, 32), // Increased height by increasing padding
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildInputField('EMAIL', 'sarra@beecool.com', controller: _emailController),
-            const SizedBox(height: 25),
+            _buildInputField(
+              Icons.email_outlined, 
+              'sarra@beecool.com', 
+              controller: _emailController,
+            ),
+            const SizedBox(height: 20), // Increased spacing
             if (!_isForgotPasswordMode) ...[
               _buildInputField(
-                'MOT DE PASSE', 
+                Icons.lock_outline, 
                 '••••••••••••', 
                 controller: _passwordController,
                 isPassword: true,
+                obscureText: _obscurePassword,
                 suffixIcon: IconButton(
                   icon: Icon(_obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined, color: Colors.grey, size: 20),
                   onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
@@ -313,39 +318,41 @@ Future<void> _handleLogin() async {
                   ),
                 ],
               ),
-              const SizedBox(height: 30),
+              const SizedBox(height: 28), // Increased spacing
               _buildConnectButton(),
-              const SizedBox(height: 25),
+              const SizedBox(height: 24), // Increased spacing
               _buildSeparator(),
-              const SizedBox(height: 20),
+              const SizedBox(height: 20), // Increased spacing
               _buildGuestButton(),
-              const SizedBox(height: 20),
+              const SizedBox(height: 20), // Increased spacing
               _buildRegisterLink(),
             ] else ...[
               _buildInputField(
-                'NOUVEAU MOT DE PASSE', 
-                '••••••••••••', 
+                Icons.lock_outline, 
+                'Nouveau mot de passe', 
                 controller: _passwordController,
                 isPassword: true,
+                obscureText: _obscurePassword,
                 suffixIcon: IconButton(
                   icon: Icon(_obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined, color: Colors.grey, size: 20),
                   onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                 ),
               ),
-              const SizedBox(height: 25),
+              const SizedBox(height: 16),
               _buildInputField(
-                'CONFIRMER MOT DE PASSE', 
-                '••••••••••••', 
+                Icons.lock_outline, 
+                'Confirmer mot de passe', 
                 controller: _confirmPasswordController,
                 isPassword: true,
+                obscureText: _obscureConfirmPassword,
                 suffixIcon: IconButton(
                   icon: Icon(_obscureConfirmPassword ? Icons.visibility_outlined : Icons.visibility_off_outlined, color: Colors.grey, size: 20),
                   onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
                 ),
               ),
-              const SizedBox(height: 35),
+              const SizedBox(height: 25),
               _buildResetButton(),
-              const SizedBox(height: 20),
+              const SizedBox(height: 15),
               Center(
                 child: TextButton(
                   onPressed: () => setState(() {
@@ -377,12 +384,12 @@ Future<void> _handleLogin() async {
           style: OutlinedButton.styleFrom(
             side: BorderSide.none,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            padding: const EdgeInsets.symmetric(horizontal: 20),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
           ),
           icon: const Icon(Icons.person_outline_rounded, color: AppColors.secondary, size: 18),
           label: const Text(
             "Continuer en tant qu'invité", 
-            style: TextStyle(color: AppColors.secondary, fontSize: 13, fontWeight: FontWeight.bold),
+            style: TextStyle(color: AppColors.secondary, fontSize: 12, fontWeight: FontWeight.bold),
           ),
         ),
       ),
@@ -543,35 +550,33 @@ Future<void> _handleLogin() async {
     );
   }
 
-  Widget _buildInputField(String label, String hint, {required TextEditingController controller, bool isPassword = false, Widget? suffixIcon}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 5),
-          child: Text(label, style: const TextStyle(color: Colors.grey, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+  Widget _buildInputField(
+    IconData icon, 
+    String hint, {
+    required TextEditingController controller, 
+    bool isPassword = false, 
+    bool obscureText = false,
+    Widget? suffixIcon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8F9FA),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: TextField(
+        controller: controller,
+        obscureText: isPassword && obscureText,
+        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.primary),
+        decoration: InputDecoration(
+          icon: Icon(icon, color: Colors.grey, size: 18),
+          hintText: hint,
+          hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(vertical: 12),
+          suffixIcon: suffixIcon,
         ),
-        const SizedBox(height: 15),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(15),
-            border: Border.all(color: Colors.grey.shade100, width: 2),
-          ),
-          child: TextField(
-            controller: controller,
-            obscureText: isPassword && _obscurePassword,
-            style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w600, fontSize: 14),
-            decoration: InputDecoration(
-              hintText: hint,
-              hintStyle: TextStyle(color: Colors.grey.shade300, fontSize: 14),
-              border: InputBorder.none,
-              suffixIcon: suffixIcon,
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
 
@@ -642,10 +647,10 @@ Future<void> _handleLogin() async {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        const Text("Nouveau chez BeeCool ? ", style: TextStyle(color: Colors.grey, fontSize: 13)),
+        const Text("Nouveau chez BeeCool ? ", style: TextStyle(color: Colors.grey, fontSize: 12)),
         GestureDetector(
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const RegisterScreen())),
-          child: const Text("Créer un compte", style: TextStyle(color: AppColors.secondary, fontWeight: FontWeight.bold, fontSize: 13)),
+          child: const Text("Créer compte", style: TextStyle(color: AppColors.secondary, fontWeight: FontWeight.bold, fontSize: 12)),
         ),
       ],
     );

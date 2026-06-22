@@ -793,16 +793,19 @@ class _ReservationStep3State extends State<ReservationStep3> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
-              isEnabled ? 'VALIDER LA TABLE & CONTINUER' : 'SÉLECTIONNEZ UNE TABLE',
-              style: TextStyle(
-                color: isEnabled ? Colors.white : Colors.grey,
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
+            Flexible(
+              child: Text(
+                isEnabled ? 'VALIDER LA TABLE' : 'SÉLECTIONNEZ UNE TABLE',
+                style: TextStyle(
+                  color: isEnabled ? Colors.white : Colors.grey,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
-            if (isEnabled) const SizedBox(width: 10),
-            if (isEnabled) const Icon(Icons.check_circle_outline, color: Colors.white, size: 20),
+            if (isEnabled) const SizedBox(width: 8),
+            if (isEnabled) const Icon(Icons.check_circle_outline, color: Colors.white, size: 18),
           ],
         ),
       ),

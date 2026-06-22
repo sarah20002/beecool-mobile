@@ -1,4 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_stripe/flutter_stripe.dart';
+import 'package:another_flushbar/flushbar.dart';
+import 'package:dio/dio.dart';
+import '../../core/config/api_config.dart';
+import '../../core/services/auth_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/services/reservation_service.dart';
 import 'reservation_confirmation.dart';
@@ -70,6 +75,51 @@ class _ReservationStep4State extends State<ReservationStep4> {
     setState(() => _isSubmitting = true);
 
     try {
+      // 1. Préparation du paiement
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Préparation du paiement de la caution...')),
+      );
+
+      final token = await AuthService().getToken();
+      final dio = Dio(BaseOptions(
+        baseUrl: ApiConfig.baseUrl,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Platform': 'mobile',
+          if (token != null) 'Authorization': 'Bearer $token',
+        },
+      ));
+
+      final double cautionVal = _calculatedCaution;
+
+      // 2. Appel API backend pour créer le PaymentIntent
+      final response = await dio.post('/payments/create-payment-intent', data: {
+        "amount": cautionVal,
+        "currency": "eur",
+        "description": "Caution Reservation ${widget.nomReservation}",
+        "type": "RESERVATION",
+        "customerEmail": widget.email,
+      });
+
+      final clientSecret = response.data['clientSecret'];
+      final paymentIntentId = response.data['paymentIntentId'];
+
+      if (clientSecret == "ERROR") {
+        throw Exception("Erreur lors de l'initialisation du paiement Stripe: ${response.data['paymentIntentId']}");
+      }
+
+      // 3. Initialiser la feuille de paiement Stripe
+      await Stripe.instance.initPaymentSheet(
+        paymentSheetParameters: SetupPaymentSheetParameters(
+          paymentIntentClientSecret: clientSecret,
+          merchantDisplayName: 'BeeCool Restaurant',
+        ),
+      );
+
+      // 4. Présenter la feuille de paiement Stripe
+      await Stripe.instance.presentPaymentSheet();
+
+      // 5. Une fois le paiement Stripe validé, on procède à l'enregistrement de la réservation
       final String monthStr = widget.date.month.toString().padLeft(2, '0');
       final String dayStr = widget.date.day.toString().padLeft(2, '0');
       final String datePart = "${widget.date.year}-$monthStr-$dayStr";
@@ -85,9 +135,19 @@ class _ReservationStep4State extends State<ReservationStep4> {
         cautionPayee: true,
         tableId: widget.tableId,
         notes: finalNotes.isNotEmpty ? finalNotes : null,
+        stripePaymentIntentId: paymentIntentId,
       );
 
       if (res != null && mounted) {
+        Flushbar(
+          message: 'Caution payée et réservation confirmée ! ✅',
+          icon: const Icon(Icons.check_circle, size: 28.0, color: Colors.white),
+          margin: const EdgeInsets.all(8),
+          borderRadius: BorderRadius.circular(8),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 3),
+        ).show(context);
+
         Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(
@@ -99,14 +159,45 @@ class _ReservationStep4State extends State<ReservationStep4> {
           (route) => false, // Clear all steps stack
         );
       }
-    } catch (e) {
+    } on StripeException catch (e) {
+      debugPrint('Stripe error: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Erreur de réservation: ${e.toString().replaceAll("Exception: ", "")}"),
-            backgroundColor: Colors.red.shade600,
-          ),
-        );
+        Flushbar(
+          message: 'Paiement annulé ou échoué.',
+          icon: const Icon(Icons.warning_amber_rounded, size: 28.0, color: Colors.white),
+          margin: const EdgeInsets.all(8),
+          borderRadius: BorderRadius.circular(8),
+          backgroundColor: Colors.orangeAccent,
+          duration: const Duration(seconds: 3),
+        ).show(context);
+      }
+    } on DioException catch (e) {
+      debugPrint('Network error during PaymentIntent: ${e.response?.data}');
+      String errorMsg = "Erreur de connexion lors de l'initialisation du paiement";
+      if (e.response != null && e.response!.data is Map && e.response!.data['message'] != null) {
+        errorMsg = e.response!.data['message'];
+      }
+      if (mounted) {
+        Flushbar(
+          message: errorMsg,
+          icon: const Icon(Icons.error_outline, size: 28.0, color: Colors.white),
+          margin: const EdgeInsets.all(8),
+          borderRadius: BorderRadius.circular(8),
+          backgroundColor: Colors.redAccent,
+          duration: const Duration(seconds: 4),
+        ).show(context);
+      }
+    } catch (e) {
+      debugPrint('General error: $e');
+      if (mounted) {
+        Flushbar(
+          message: "Erreur de réservation: ${e.toString().replaceAll("Exception: ", "")}",
+          icon: const Icon(Icons.error_outline, size: 28.0, color: Colors.white),
+          margin: const EdgeInsets.all(8),
+          borderRadius: BorderRadius.circular(8),
+          backgroundColor: Colors.redAccent,
+          duration: const Duration(seconds: 4),
+        ).show(context);
       }
     } finally {
       if (mounted) {
@@ -204,70 +295,9 @@ class _ReservationStep4State extends State<ReservationStep4> {
         const Text('Aucun débit immédiat — libérée 24 h après votre venue.', style: TextStyle(color: Colors.grey, fontSize: 14)),
         const SizedBox(height: 30),
         
-        // --- Formulaire Stripe (Statique / Mockup) ---
-        const Text('INFORMATIONS DE CARTE', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.grey)),
-        const SizedBox(height: 10),
-        Container(
-          height: 55,
-          padding: const EdgeInsets.symmetric(horizontal: 15),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.grey.shade300),
-            boxShadow: [
-              BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 2)),
-            ],
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.credit_card_rounded, color: Colors.grey.shade600, size: 22),
-              const SizedBox(width: 12),
-              Expanded(
-                flex: 5,
-                child: TextField(
-                  controller: _cardNumberController,
-                  keyboardType: TextInputType.number,
-                  style: const TextStyle(fontSize: 15, color: Color(0xFF0F172A), fontWeight: FontWeight.w600, letterSpacing: 1.5),
-                  decoration: InputDecoration(
-                    hintText: 'Numéro de carte',
-                    hintStyle: TextStyle(color: Colors.grey.shade400, letterSpacing: 0),
-                    border: InputBorder.none,
-                  ),
-                ),
-              ),
-              Container(width: 1, height: 25, color: Colors.grey.shade300),
-              const SizedBox(width: 10),
-              Expanded(
-                flex: 2,
-                child: TextField(
-                  keyboardType: TextInputType.datetime,
-                  style: const TextStyle(fontSize: 15, color: Color(0xFF0F172A), fontWeight: FontWeight.w600),
-                  decoration: InputDecoration(
-                    hintText: 'MM/AA',
-                    hintStyle: TextStyle(color: Colors.grey.shade400),
-                    border: InputBorder.none,
-                  ),
-                ),
-              ),
-              Container(width: 1, height: 25, color: Colors.grey.shade300),
-              const SizedBox(width: 10),
-              Expanded(
-                flex: 2,
-                child: TextField(
-                  keyboardType: TextInputType.number,
-                  style: const TextStyle(fontSize: 15, color: Color(0xFF0F172A), fontWeight: FontWeight.w600),
-                  decoration: InputDecoration(
-                    hintText: 'CVC',
-                    hintStyle: TextStyle(color: Colors.grey.shade400),
-                    border: InputBorder.none,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 20),
         _buildField(label: 'Titulaire de la carte', controller: _holderController, hint: 'YASMINE BENNIS'),
+        const SizedBox(height: 25),
+        _buildStripeInfoCard(),
         
         const SizedBox(height: 30),
         _buildPaymentInfoBox(),
@@ -363,6 +393,63 @@ class _ReservationStep4State extends State<ReservationStep4> {
                 ),
         ),
       ),
+    );
+  }
+
+  Widget _buildStripeInfoCard() {
+    return Container(
+      padding: const EdgeInsets.all(25),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(25),
+        border: Border.all(color: Colors.grey.shade200, width: 1.5),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 20, offset: const Offset(0, 10)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(15),
+            decoration: BoxDecoration(
+              color: const Color(0xFF635BFF).withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.lock_outline_rounded, color: Color(0xFF635BFF), size: 30),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            'Transaction 100% Sécurisée',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.primary),
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'Votre caution sera traitée en toute sécurité par Stripe.\nVous pourrez choisir votre carte bancaire ou Apple/Google Pay à l\'étape suivante.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey, fontSize: 13, height: 1.5),
+          ),
+          const SizedBox(height: 25),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildBrandIcon('https://img.icons8.com/color/48/visa.png'),
+              const SizedBox(width: 15),
+              _buildBrandIcon('https://img.icons8.com/color/48/mastercard.png'),
+              const SizedBox(width: 15),
+              _buildBrandIcon('https://img.icons8.com/color/48/apple-pay.png'),
+            ],
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBrandIcon(String url) {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(10)),
+      child: Image.network(url, width: 30, height: 30, errorBuilder: (c, e, s) => const Icon(Icons.credit_card, size: 20)),
     );
   }
 }

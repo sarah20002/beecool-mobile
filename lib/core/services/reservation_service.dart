@@ -24,6 +24,7 @@ class ReservationService {
     bool cautionPayee = true,
     String? tableId,
     String? notes,
+    String? stripePaymentIntentId,
   }) async {
     try {
       final token = await AuthService().getToken();
@@ -41,6 +42,7 @@ class ReservationService {
           'cautionPayee': cautionPayee,
           'tableId': tableId,
           'notes': notes,
+          'stripePaymentIntentId': stripePaymentIntentId,
         },
         options: Options(
           headers: {

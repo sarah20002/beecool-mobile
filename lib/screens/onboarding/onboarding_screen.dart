@@ -63,46 +63,45 @@ class OnboardingScreen extends StatelessWidget {
                   
                   const Spacer(),
                   
-                  // Textes de bienvenue
                   FadeInLeft(
                     child: const Text(
                       'BIENVENUE',
                       style: TextStyle(
                         color: AppColors.secondary,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 2,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 3,
                       ),
                     ),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
                   FadeInLeft(
                     delay: const Duration(milliseconds: 200),
                     child: const Text(
                       'Une table.\nUne histoire.',
                       style: TextStyle(
                         color: Colors.white,
-                        fontSize: 48,
+                        fontSize: 36,
                         fontWeight: FontWeight.bold,
-                        height: 1.1,
+                        height: 1.2,
                         fontFamily: 'Serif',
                       ),
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 16),
                   FadeInLeft(
                     delay: const Duration(milliseconds: 400),
                     child: const Text(
                       'Réservez, commandez et vivez l\'expérience gastronomique signée par notre Chef.',
                       style: TextStyle(
                         color: Colors.white70,
-                        fontSize: 16,
+                        fontSize: 15,
                         height: 1.5,
                       ),
                     ),
                   ),
                   
-                  const SizedBox(height: 40),
+                  const Spacer(),
                   
                   // Boutons en bas
                   Row(

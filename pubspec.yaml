@@ -39,3 +39,9 @@ flutter_launcher_icons:
   android: true
   ios: true
   image_path: "assets/images/logo.png"
+  # Pour Android : Configuration de l'icône adaptative (évite le contour blanc)
+  # Remplacez par la couleur de fond exacte de votre logo (ex: #0C1726 pour bleu foncé, #FC9910 pour orange, #FFFFFF pour blanc)
+  adaptive_icon_background: "#0C1726"
+  adaptive_icon_foreground: "assets/images/logo.png"
+  # Pour iOS : Évite les soucis de transparence sur iPhone
+  remove_alpha_ios: true

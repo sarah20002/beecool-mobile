@@ -57,7 +57,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> with SingleTickerProv
     _scannerController.stop();
 
     final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('jwt_token');
+    final token = await AuthService().getToken();
 
     final dio = Dio(BaseOptions(
       baseUrl: ApiConfig.baseUrl,
@@ -201,219 +201,232 @@ class _QRScannerScreenState extends State<QRScannerScreen> with SingleTickerProv
         ),
         centerTitle: true,
       ),
-      body: Column(
-        children: [
-          const SizedBox(height: 20),
-          FadeInDown(
-            child: Column(
-              children: [
-                const Text(
-                  'TABLE CONNECTÉE',
-                  style: TextStyle(color: AppColors.secondary, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.5),
-                ),
-                const SizedBox(height: 10),
-                RichText(
-                  textAlign: TextAlign.center,
-                  text: const TextSpan(
-                    style: TextStyle(fontSize: 28, color: AppColors.primary, fontFamily: 'Serif'),
-                    children: [
-                      TextSpan(text: 'Cadrez le QR \n'),
-                      TextSpan(text: 'de votre table', style: TextStyle(color: AppColors.secondary, fontStyle: FontStyle.italic)),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          
-          const SizedBox(height: 40),
-          
-          // Scanner Box
-          FadeIn(
-            delay: const Duration(milliseconds: 500),
-            child: Center(
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  Container(
-                    width: 280,
-                    height: 280,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1E3A8A).withOpacity(0.4), // Bleu avec transparence (Glassmorphism)
-                      borderRadius: BorderRadius.circular(30),
-                      border: Border.all(color: Colors.white.withOpacity(0.2), width: 1.5),
-                      boxShadow: [
-                        BoxShadow(color: const Color(0xFF1E3A8A).withOpacity(0.2), blurRadius: 20, offset: const Offset(0, 10))
-                      ],
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(30),
-                      child: MobileScanner(
-                        controller: _scannerController,
-                        onDetect: (capture) {
-                          final List<Barcode> barcodes = capture.barcodes;
-                          for (final barcode in barcodes) {
-                            if (barcode.rawValue != null) {
-                              _processTableId(barcode.rawValue!);
-                              break;
-                            }
-                          }
-                        },
-                      ),
-                    ),
-                  ),
-                  // Watermark icon in the center
-                  IgnorePointer(
-                    child: Container(
-                      width: 120,
-                      height: 120,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.85), // Slightly transparent white
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10)
-                        ],
-                      ),
-                      child: const Center(
-                        child: Icon(Icons.qr_code_2_rounded, color: Color(0xFF1E3A8A), size: 100),
-                      ),
-                    ),
-                  ),
-                  _buildCorners(),
-                  // Animated Scanner Line
-                  AnimatedBuilder(
-                    animation: _animationController,
-                    builder: (context, child) {
-                      return Positioned(
-                        top: 20 + (_animationController.value * 240), // Animates up and down within the 280x280 box
-                        left: 20,
-                        right: 20,
-                        child: Container(
-                          height: 3,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                const Color(0xFFFC9910).withOpacity(0.0),
-                                const Color(0xFFFC9910),
-                                const Color(0xFFFC9910).withOpacity(0.0),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          return SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minHeight: constraints.maxHeight,
+              ),
+              child: IntrinsicHeight(
+                child: Column(
+                  children: [
+                    const SizedBox(height: 20),
+                    FadeInDown(
+                      child: Column(
+                        children: [
+                          const Text(
+                            'TABLE CONNECTÉE',
+                            style: TextStyle(color: AppColors.secondary, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.5),
+                          ),
+                          const SizedBox(height: 10),
+                          RichText(
+                            textAlign: TextAlign.center,
+                            text: const TextSpan(
+                              style: TextStyle(fontSize: 28, color: AppColors.primary, fontFamily: 'Serif'),
+                              children: [
+                                TextSpan(text: 'Cadrez le QR \n'),
+                                TextSpan(text: 'de votre table', style: TextStyle(color: AppColors.secondary, fontStyle: FontStyle.italic)),
                               ],
                             ),
-                            boxShadow: [
-                              BoxShadow(color: const Color(0xFFFC9910).withOpacity(0.6), blurRadius: 10, spreadRadius: 2),
-                            ],
                           ),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ),
-          
-          const SizedBox(height: 15),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 40),
-            child: Text(
-              'Accédez à la carte, commandez et payez sans quitter votre table.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Color(0xFF64748B), fontSize: 13, height: 1.4, fontWeight: FontWeight.w500),
-            ),
-          ),
-          
-          const SizedBox(height: 25),
-          
-          Row(
-            children: [
-              Expanded(child: Divider(color: Colors.grey.shade300, indent: 40, endIndent: 10)),
-              Text('OU', style: TextStyle(color: Colors.grey.shade500, fontSize: 12, fontWeight: FontWeight.bold)),
-              Expanded(child: Divider(color: Colors.grey.shade300, indent: 10, endIndent: 40)),
-            ],
-          ),
-          
-          const Spacer(),
-          
-          // Manual Input Field
-          Padding(
-            padding: const EdgeInsets.fromLTRB(25, 10, 25, 35),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'SAISIR L\'IDENTIFIANT',
-                  style: TextStyle(
-                    color: Color(0xFF0F172A),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.2,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.8), // Goutte d'eau effect
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: Colors.grey.withOpacity(0.2), width: 1.5),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.04),
-                              blurRadius: 15,
-                              offset: const Offset(0, 5),
+                        ],
+                      ),
+                    ),
+                    
+                    const SizedBox(height: 40),
+                    
+                    // Scanner Box
+                    FadeIn(
+                      delay: const Duration(milliseconds: 500),
+                      child: Center(
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            Container(
+                              width: 280,
+                              height: 280,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1E3A8A).withOpacity(0.4), // Bleu avec transparence (Glassmorphism)
+                                borderRadius: BorderRadius.circular(30),
+                                border: Border.all(color: Colors.white.withOpacity(0.2), width: 1.5),
+                                boxShadow: [
+                                  BoxShadow(color: const Color(0xFF1E3A8A).withOpacity(0.2), blurRadius: 20, offset: const Offset(0, 10))
+                                ],
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(30),
+                                child: MobileScanner(
+                                  controller: _scannerController,
+                                  onDetect: (capture) {
+                                    final List<Barcode> barcodes = capture.barcodes;
+                                    for (final barcode in barcodes) {
+                                      if (barcode.rawValue != null) {
+                                        _processTableId(barcode.rawValue!);
+                                        break;
+                                      }
+                                    }
+                                  },
+                                ),
+                              ),
+                            ),
+                            // Watermark icon in the center
+                            IgnorePointer(
+                              child: Container(
+                                width: 120,
+                                height: 120,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.85), // Slightly transparent white
+                                  borderRadius: BorderRadius.circular(20),
+                                  boxShadow: [
+                                    BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10)
+                                  ],
+                                ),
+                                child: const Center(
+                                  child: Icon(Icons.qr_code_2_rounded, color: Color(0xFF1E3A8A), size: 100),
+                                ),
+                              ),
+                            ),
+                            _buildCorners(),
+                            // Animated Scanner Line
+                            AnimatedBuilder(
+                              animation: _animationController,
+                              builder: (context, child) {
+                                return Positioned(
+                                  top: 20 + (_animationController.value * 240), // Animates up and down within the 280x280 box
+                                  left: 20,
+                                  right: 20,
+                                  child: Container(
+                                    height: 3,
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        colors: [
+                                          const Color(0xFFFC9910).withOpacity(0.0),
+                                          const Color(0xFFFC9910),
+                                          const Color(0xFFFC9910).withOpacity(0.0),
+                                        ],
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(color: const Color(0xFFFC9910).withOpacity(0.6), blurRadius: 10, spreadRadius: 2),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
                             ),
                           ],
-                        ),
-                        child: TextField(
-                          controller: _idController,
-                          style: const TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.w600, fontSize: 15),
-                          decoration: InputDecoration(
-                            hintText: 'Ex. TABLE-07',
-                          hintStyle: TextStyle(color: Colors.grey.shade500, fontSize: 15, fontWeight: FontWeight.w500),
-                            prefixIcon: const Icon(Icons.qr_code_2_rounded, color: Color(0xFF2563EB), size: 22), // Bleu clair/marine (pas noir)
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              borderSide: BorderSide.none,
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-                          ),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 15),
-                    GestureDetector(
-                      onTap: () {
-                        if (_idController.text.isNotEmpty) {
-                          _processTableId(_idController.text);
-                        }
-                      },
-                      child: Container(
-                        width: 56,
-                        height: 56,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8A11C), // Jaune/Orange lumineux comme sur l'image
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFFF8A11C).withOpacity(0.6), // Trace à l'entour (Glow)
-                              blurRadius: 18,
-                              spreadRadius: 3,
-                              offset: const Offset(0, 4),
-                            )
-                          ],
-                        ),
-                        child: const Center(
-                          child: Icon(Icons.arrow_forward_rounded, color: Color(0xFF0F172A), size: 24),
-                        ),
+                    
+                    const SizedBox(height: 15),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 40),
+                      child: Text(
+                        'Accédez à la carte, commandez et payez sans quitter votre table.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Color(0xFF64748B), fontSize: 13, height: 1.4, fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                    
+                    const SizedBox(height: 25),
+                    
+                    Row(
+                      children: [
+                        Expanded(child: Divider(color: Colors.grey.shade300, indent: 40, endIndent: 10)),
+                        Text('OU', style: TextStyle(color: Colors.grey.shade500, fontSize: 12, fontWeight: FontWeight.bold)),
+                        Expanded(child: Divider(color: Colors.grey.shade300, indent: 10, endIndent: 40)),
+                      ],
+                    ),
+                    
+                    const Spacer(),
+                    
+                    // Manual Input Field
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(25, 10, 25, 35),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'SAISIR L\'IDENTIFIANT',
+                            style: TextStyle(
+                              color: Color(0xFF0F172A),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1.2,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.8), // Goutte d'eau effect
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(color: Colors.grey.withOpacity(0.2), width: 1.5),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.04),
+                                        blurRadius: 15,
+                                        offset: const Offset(0, 5),
+                                      ),
+                                    ],
+                                  ),
+                                  child: TextField(
+                                    controller: _idController,
+                                    style: const TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.w600, fontSize: 15),
+                                    decoration: InputDecoration(
+                                      hintText: 'Ex. TABLE-07',
+                                      hintStyle: TextStyle(color: Colors.grey.shade500, fontSize: 15, fontWeight: FontWeight.w500),
+                                      prefixIcon: const Icon(Icons.qr_code_2_rounded, color: Color(0xFF2563EB), size: 22), // Bleu clair/marine (pas noir)
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(16),
+                                        borderSide: BorderSide.none,
+                                      ),
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 15),
+                              GestureDetector(
+                                onTap: () {
+                                  if (_idController.text.isNotEmpty) {
+                                    _processTableId(_idController.text);
+                                  }
+                                },
+                                child: Container(
+                                  width: 56,
+                                  height: 56,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF8A11C), // Jaune/Orange lumineux comme sur l'image
+                                    shape: BoxShape.circle,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: const Color(0xFFF8A11C).withOpacity(0.6), // Trace à l'entour (Glow)
+                                        blurRadius: 18,
+                                        spreadRadius: 3,
+                                        offset: const Offset(0, 4),
+                                      )
+                                    ],
+                                  ),
+                                  child: const Center(
+                                    child: Icon(Icons.arrow_forward_rounded, color: Color(0xFF0F172A), size: 24),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
-              ],
+              ),
             ),
-          ),
-        ],
+          );
+        },
       ),
     );
   }

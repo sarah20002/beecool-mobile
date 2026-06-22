@@ -125,11 +125,11 @@ class _ReclamationsScreenState extends State<ReclamationsScreen> {
           ),
           decoration: const BoxDecoration(
             gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+              begin: Alignment.topRight,
+              end: Alignment.bottomLeft,
               colors: [
-                Color(0xFFFFD166), // Bright Yellow/Orange
-                Color(0xFFE89A0F), // Deep Orange
+                Color(0xFFF59E0B), // Warm rich amber
+                Color(0xFFD97706), // Deep rich gold/honey
               ],
             ),
             borderRadius: BorderRadius.only(

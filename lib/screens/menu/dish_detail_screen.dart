@@ -5,6 +5,12 @@ import '../../core/theme/app_colors.dart';
 import '../../core/services/cart_service.dart';
 import '../cart/cart_screen.dart';
 import '../home/qr_scanner_screen.dart';
+import 'package:dio/dio.dart';
+import '../../core/config/api_config.dart';
+import '../../core/services/auth_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/services/favorites_service.dart';
+import '../../core/utils/notification_helper.dart';
 
 class DishDetailScreen extends StatefulWidget {
   final Map<String, dynamic> dish;
@@ -13,6 +19,7 @@ class DishDetailScreen extends StatefulWidget {
   final String? initialNotes;
   final int? initialQuantity;
   final List<dynamic>? relatedDishes;
+  final List<dynamic>? allDishes;
 
   const DishDetailScreen({
     super.key,
@@ -22,6 +29,7 @@ class DishDetailScreen extends StatefulWidget {
     this.initialNotes,
     this.initialQuantity,
     this.relatedDishes,
+    this.allDishes,
   });
 
   @override
@@ -31,12 +39,93 @@ class DishDetailScreen extends StatefulWidget {
 class _DishDetailScreenState extends State<DishDetailScreen> {
   int _quantity = 1;
   late final TextEditingController _notesController;
+  bool _isFavorite = false;
+  bool _isRealClient = false;
 
   @override
   void initState() {
     super.initState();
     _quantity = widget.initialQuantity ?? 1;
     _notesController = TextEditingController(text: widget.initialNotes ?? '');
+    _saveLastConsultedDish();
+    _checkClientAndLoadFavorites();
+  }
+
+  Future<void> _checkClientAndLoadFavorites() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userEmail = prefs.getString('user_email') ?? '';
+      _isRealClient = userEmail.isNotEmpty && !userEmail.startsWith('GUEST');
+      if (_isRealClient) {
+        final list = await FavoritesService().getFavorites();
+        final dishId = widget.dish['id']?.toString();
+        if (dishId != null && list.any((fav) => fav['id'].toString() == dishId)) {
+          if (mounted) {
+            setState(() {
+              _isFavorite = true;
+            });
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[DishDetail] Erreur chargement favoris: $e');
+    }
+  }
+
+  Future<void> _saveLastConsultedDish() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final dishId = widget.dish['id']?.toString();
+      if (dishId != null) {
+        await prefs.setString('last_consulted_dish_id', dishId);
+        debugPrint('[DishDetail] Enregistrement du dernier plat consulte : $dishId');
+      }
+    } catch (e) {
+      debugPrint('[DishDetail] Erreur enregistrement dernier plat consulte : $e');
+    }
+  }
+
+  Future<void> _toggleFavorite() async {
+    if (!_isRealClient) {
+      NotificationHelper.showWarning(
+        context, 
+        title: "Accès limité", 
+        message: "Veuillez créer un compte pour ajouter des favoris."
+      );
+      return;
+    }
+
+    final dishId = widget.dish['id']?.toString();
+    if (dishId == null) return;
+
+    try {
+      final success = _isFavorite 
+          ? await FavoritesService().removeFavorite(dishId)
+          : await FavoritesService().addFavorite(dishId);
+      
+      if (success && mounted) {
+        setState(() {
+          _isFavorite = !_isFavorite;
+        });
+        
+        NotificationHelper.showSuccess(
+          context,
+          title: _isFavorite ? "Ajouté aux favoris" : "Retiré des favoris",
+          message: _isFavorite 
+              ? "${widget.dish['nom'] ?? 'Le plat'} a été ajouté à vos favoris."
+              : "${widget.dish['nom'] ?? 'Le plat'} a été retiré de vos favoris."
+        );
+      } else if (mounted) {
+        NotificationHelper.showError(
+          context,
+          title: "Erreur",
+          message: "Une erreur est survenue lors de la modification des favoris.",
+          onRetry: () {}
+        );
+      }
+    } catch (e) {
+      debugPrint('[DishDetail] Erreur toggle favoris: $e');
+    }
   }
 
   @override
@@ -429,11 +518,11 @@ class _DishDetailScreenState extends State<DishDetailScreen> {
                       ),
                       const SizedBox(height: 25),
 
-                      // Related Dishes Row
+                      // Same Category / Related Dishes
                       if (widget.relatedDishes != null && widget.relatedDishes!.isNotEmpty) ...[
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 25),
-                          child: const Text(
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 25),
+                          child: Text(
                             'Dans la même catégorie',
                             style: TextStyle(color: Color(0xFF0F172A), fontSize: 18, fontWeight: FontWeight.w800),
                           ),
@@ -454,7 +543,6 @@ class _DishDetailScreenState extends State<DishDetailScreen> {
                               
                               return GestureDetector(
                                 onTap: () {
-                                  // Navigate to related dish
                                   Navigator.pushReplacement(
                                     context,
                                     MaterialPageRoute(
@@ -464,6 +552,7 @@ class _DishDetailScreenState extends State<DishDetailScreen> {
                                             .where((d) => d['id'] != relatedDish['id'])
                                             .toList()
                                             ..add(widget.dish),
+                                        allDishes: widget.allDishes,
                                       ),
                                     ),
                                   );
@@ -484,7 +573,7 @@ class _DishDetailScreenState extends State<DishDetailScreen> {
                                     children: [
                                       ClipRRect(
                                         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-                                        child: Image.network(relatedImg, height: 100, width: 140, fit: BoxFit.cover),
+                                        child: Image.network(relatedImg, height: 100, width: 140, fit: BoxFit.cover, errorBuilder: (context, error, stackTrace) => Container(height: 100, color: Colors.grey.shade200, child: const Center(child: Icon(Icons.broken_image_rounded, color: Colors.grey)))),
                                       ),
                                       Padding(
                                         padding: const EdgeInsets.all(10),
@@ -529,7 +618,11 @@ class _DishDetailScreenState extends State<DishDetailScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   _circularIcon(Icons.arrow_back_rounded, () => Navigator.pop(context)),
-                  _circularIcon(Icons.favorite_border_rounded, () {}),
+                  _circularIcon(
+                    _isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                    _toggleFavorite,
+                    color: _isFavorite ? Colors.amber : Colors.white,
+                  ),
                 ],
               ),
             ),
@@ -691,7 +784,7 @@ class _DishDetailScreenState extends State<DishDetailScreen> {
     );
   }
 
-  Widget _circularIcon(IconData icon, VoidCallback onTap) {
+  Widget _circularIcon(IconData icon, VoidCallback onTap, {Color color = Colors.white}) {
     return GestureDetector(
       onTap: onTap,
       child: ClipOval(
@@ -704,7 +797,7 @@ class _DishDetailScreenState extends State<DishDetailScreen> {
               shape: BoxShape.circle,
               border: Border.all(color: Colors.white.withOpacity(0.2), width: 1), // Subtle light border for droplet effect
             ),
-            child: Icon(icon, color: Colors.white, size: 22),
+            child: Icon(icon, color: color, size: 22),
           ),
         ),
       ),

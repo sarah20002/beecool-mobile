@@ -15,6 +15,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/config/api_config.dart';
 import '../../core/services/cart_service.dart';
 import '../../core/services/favorites_service.dart';
+import '../../core/services/auth_service.dart';
 import '../../core/utils/notification_helper.dart';
 import 'dish_detail_screen.dart';
 
@@ -48,6 +49,9 @@ class _MenuScreenState extends State<MenuScreen> {
   List<String> _favoritePlatIds = [];
   bool _isRealClient = false;
 
+  List<dynamic> _recommendedDishes = [];
+  bool _isLoadingRecommendations = false;
+
   @override
   void initState() {
     super.initState();
@@ -67,6 +71,102 @@ class _MenuScreenState extends State<MenuScreen> {
         _isRealClient = true;
       });
       _loadFavorites();
+    }
+  }
+
+  Future<void> _loadRecommendedDishes() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final lastDishId = prefs.getString('last_consulted_dish_id');
+      debugPrint('[Menu Recommandations] Dernier plat consulte ID : $lastDishId');
+      if (lastDishId == null) {
+        if (mounted) {
+          setState(() {
+            _recommendedDishes = [];
+          });
+        }
+        return;
+      }
+
+      if (mounted) {
+        setState(() {
+          _isLoadingRecommendations = true;
+        });
+      }
+
+      final token = await AuthService().getToken();
+      final dio = Dio(BaseOptions(
+        baseUrl: ApiConfig.baseUrl,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Platform': 'mobile',
+          if (token != null) 'Authorization': 'Bearer $token',
+        },
+      ));
+
+      final url = ApiConfig.aiRecommend(lastDishId, etablissementId: widget.etablissementId);
+      debugPrint('[Menu Recommandations] Appel de l\'URL : ${ApiConfig.baseUrl}$url');
+      final response = await dio.get(url);
+
+      if (response.statusCode == 200 && response.data != null) {
+        debugPrint('[Menu Recommandations] Reponse recue : ${response.data}');
+        List<dynamic> rawList = [];
+        if (response.data is Map) {
+          final dataMap = response.data as Map;
+          final listData = dataMap['recommandations'] ?? dataMap['recommendations'] ?? dataMap['plats'] ?? dataMap['items'] ?? dataMap['dishes'] ?? dataMap['data'];
+          if (listData is List) {
+            rawList = listData;
+          } else {
+            for (var val in dataMap.values) {
+              if (val is List) {
+                rawList = val;
+                break;
+              }
+            }
+          }
+        } else if (response.data is List) {
+          rawList = response.data;
+        }
+
+        List<dynamic> resolvedDishes = [];
+        if (rawList.isNotEmpty) {
+          if (rawList.first is String || rawList.first is num || rawList.first is int) {
+            final ids = rawList.map((id) => id.toString()).toSet();
+            resolvedDishes = _plats.where((p) => ids.contains(p['id'].toString())).toList();
+          } else if (rawList.first is Map) {
+            final ids = rawList.map((item) {
+              if (item is Map) {
+                return (item['plat_id'] ?? item['id'])?.toString();
+              }
+              return null;
+            }).where((id) => id != null).cast<String>().toSet();
+
+            resolvedDishes = _plats.where((p) => ids.contains(p['id'].toString())).toList();
+          }
+        }
+
+        debugPrint('[Menu Recommandations] Plats resolus : ${resolvedDishes.map((p) => p['nom']).toList()}');
+
+        if (mounted) {
+          setState(() {
+            _recommendedDishes = resolvedDishes;
+            _isLoadingRecommendations = false;
+          });
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _isLoadingRecommendations = false;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('[Menu Recommandations] Exception : $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingRecommendations = false;
+        });
+      }
     }
   }
 
@@ -97,6 +197,7 @@ class _MenuScreenState extends State<MenuScreen> {
           _plats = platsResponse.data ?? [];
           _isLoading = false;
         });
+        _loadRecommendedDishes();
       }
     } catch (e) {
       if (mounted) setState(() => _isLoading = false);
@@ -129,7 +230,7 @@ class _MenuScreenState extends State<MenuScreen> {
 
             const SizedBox(height: 5),
 
-            _buildRecommended(),
+            _buildPopularDishes(),
 
             const SizedBox(height: 20),
 
@@ -242,36 +343,38 @@ class _MenuScreenState extends State<MenuScreen> {
 
 
 
-  Widget _buildRecommended() {
-    final List<Map<String, dynamic>> mockRecommended = [
-      {
-        'id': 'mock1',
-        'nom': 'Burger Spécial',
-        'prix': '15',
-        'image': 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=400&q=80',
-      },
-      {
-        'id': 'mock2',
-        'nom': 'Pizza Margherita',
-        'prix': '18',
-        'image': 'https://images.unsplash.com/photo-1574071318508-1cdbab80d002?auto=format&fit=crop&w=400&q=80',
-      },
-      {
-        'id': 'mock3',
-        'nom': 'Salade César',
-        'prix': '12',
-        'image': 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=400&q=80',
-      },
-    ];
+  Widget _buildPopularDishes() {
+    if (_isLoading) {
+      return const SizedBox.shrink();
+    }
+
+    final hasRecommendations = _recommendedDishes.isNotEmpty;
+    final List<dynamic> dishesToShow;
+    final String sectionTitle;
+
+    if (hasRecommendations) {
+      dishesToShow = _recommendedDishes;
+      sectionTitle = 'Plats Recommandés';
+    } else {
+      final popularPlats = _plats.where((p) {
+        return p['populaire'] == true || p['isPopular'] == true || p['popular'] == true;
+      }).toList();
+      dishesToShow = popularPlats.isNotEmpty ? popularPlats : _plats.take(5).toList();
+      sectionTitle = 'Plats Populaires';
+    }
+
+    if (dishesToShow.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 20.0),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20.0),
           child: Text(
-            'Plats Recommandés',
-            style: TextStyle(
+            sectionTitle,
+            style: const TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w600,
               color: Colors.black87,
@@ -284,57 +387,86 @@ class _MenuScreenState extends State<MenuScreen> {
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 15),
-            itemCount: mockRecommended.length,
+            itemCount: dishesToShow.length,
             itemBuilder: (context, index) {
-              final item = mockRecommended[index];
+              final item = dishesToShow[index];
+              final imageUrl = (item['image'] != null && item['image'].toString().isNotEmpty)
+                  ? item['image']
+                  : 'https://images.unsplash.com/photo-1544124499-58912cbddaad?auto=format&fit=crop&w=400&q=80';
+              final priceStr = item['prixPromotion'] != null 
+                  ? '${item['prixPromotion']} DT' 
+                  : (item['prix'] != null ? '${item['prix']} DT' : '0 DT');
+
               return FadeInRight(
                 delay: Duration(milliseconds: 100 * index),
-                child: Container(
-                  width: 125,
-                  margin: const EdgeInsets.only(right: 15, bottom: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(15),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.06),
-                        blurRadius: 8,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      ClipRRect(
-                        borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
-                        child: Image.network(
-                          item['image'],
-                          height: 85,
-                          width: double.infinity,
-                          fit: BoxFit.cover,
+                child: GestureDetector(
+                  onTap: () {
+                    final related = _plats.where((p) => p['categorieId'] == item['categorieId'] && p['id'] != item['id']).toList();
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => DishDetailScreen(
+                          dish: item,
+                          relatedDishes: related,
+                          allDishes: _plats,
                         ),
                       ),
-                      Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              item['nom'],
-                              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${item['prix']} DT',
-                              style: const TextStyle(color: AppColors.secondary, fontWeight: FontWeight.bold, fontSize: 12),
-                            ),
-                          ],
+                    ).then((_) {
+                      _loadRecommendedDishes();
+                    });
+                  },
+                  child: Container(
+                    width: 125,
+                    margin: const EdgeInsets.only(right: 15, bottom: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(15),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.06),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ClipRRect(
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
+                          child: Image.network(
+                            imageUrl,
+                            height: 85,
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => Container(
+                              height: 85,
+                              color: Colors.grey.shade200,
+                              child: const Center(child: Icon(Icons.broken_image_rounded, color: Colors.grey, size: 25)),
+                            ),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                item['nom'] ?? '',
+                                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                priceStr,
+                                style: const TextStyle(color: AppColors.secondary, fontWeight: FontWeight.bold, fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               );
@@ -435,9 +567,12 @@ class _MenuScreenState extends State<MenuScreen> {
                   builder: (context) => DishDetailScreen(
                     dish: item,
                     relatedDishes: related,
+                    allDishes: _plats,
                   ),
                 ),
-              );
+              ).then((_) {
+                _loadRecommendedDishes();
+              });
             },
             child: Container(
               margin: const EdgeInsets.only(bottom: 20, left: 10, right: 10),

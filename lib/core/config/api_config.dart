@@ -2,17 +2,17 @@ import 'package:flutter/foundation.dart';
 
 class ApiConfig {
   // Mise à jour automatique de l'IP du PC
-  static const String _localIp = '192.168.1.57'; 
+  static const String _localIp = '192.168.155.222'; 
 
   static String get baseUrl {
     if (kIsWeb) {
 
-          // return 'http://localhost:8081/api';
+           return 'http://localhost:8081/api';
 
-      return 'https://beecool.back.dpc.com.tn/api';
+     // return 'https://beecool.back.dpc.com.tn/api';
     }
-  //return 'http://$_localIp:8081/api';
-    return 'https://beecool.back.dpc.com.tn/api';
+  return 'http://$_localIp:8081/api';
+   // return 'https://beecool.back.dpc.com.tn/api';
   } 
   
   static const String login = '/auth/login';
@@ -24,4 +24,11 @@ class ApiConfig {
   static const String reservations = '/reservations';
   static String platsParEtablissement(String id) => '/menu/$id/plats';
   static String categoriesParEtablissement(String id) => '/menu/$id';
+  static String aiRecommend(String platId, {String? etablissementId}) {
+    String url = '/v1/analytics/ai/recommend/$platId';
+    if (etablissementId != null) {
+      url += '?etablissementId=$etablissementId';
+    }
+    return url;
+  }
 }

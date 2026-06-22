@@ -1014,23 +1014,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     child: Text(_getInitials(), style: const TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.w900, fontSize: 36)),
                                   ),
                                 ),
-                                Positioned(
-                                  bottom: 0,
-                                  right: 0,
-                                  child: Container(
-                                    padding: const EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF132B49),
-                                      shape: BoxShape.circle,
-                                      border: Border.all(color: Colors.white, width: 2),
-                                    ),
-                                    child: const Icon(
-                                      Icons.camera_alt_rounded,
-                                      color: Colors.white,
-                                      size: 16,
-                                    ),
-                                  ),
-                                ),
                               ],
                             ),
                           ),

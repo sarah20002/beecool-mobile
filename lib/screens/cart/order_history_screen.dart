@@ -50,7 +50,21 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
   Future<void> _loadOrders() async {
     setState(() => _isLoading = true);
     try {
-      final rawList = await OrderService().getClientOrders();
+      final now = DateTime.now();
+      final currentMonth = now.month;
+      final currentYear = now.year;
+
+      final prevMonthDateTime = DateTime(now.year, now.month - 1, 1);
+      final prevMonth = prevMonthDateTime.month;
+      final prevYear = prevMonthDateTime.year;
+
+      // Load current and previous month's orders in parallel to efficiently cover the last 30 days
+      final results = await Future.wait([
+        OrderService().getClientOrders(month: currentMonth, year: currentYear),
+        OrderService().getClientOrders(month: prevMonth, year: prevYear),
+      ]);
+
+      final List<dynamic> rawList = [...results[0], ...results[1]];
       
       // Sort: From most recent to oldest
       rawList.sort((a, b) {

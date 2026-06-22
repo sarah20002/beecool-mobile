@@ -539,9 +539,19 @@ class _ReservationStep2State extends State<ReservationStep2> {
             : Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(btnText, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-                  const SizedBox(width: 10),
-                  const Icon(Icons.arrow_forward, color: Colors.white, size: 20),
+                  Flexible(
+                    child: Text(
+                      btnText, 
+                      style: const TextStyle(
+                        color: Colors.white, 
+                        fontWeight: FontWeight.bold, 
+                        fontSize: 12,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Icon(Icons.arrow_forward, color: Colors.white, size: 18),
                 ],
               ),
       ),
